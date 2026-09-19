@@ -1,0 +1,230 @@
+{
+  "metadata": {
+    "dataset": "HackMysuru 1.0 Synthetic Responsibility Rules Dataset",
+    "version": "1.0.0",
+    "lastUpdated": "2026-09-19",
+    "disclaimer": "DEVELOPMENT SYNTHETIC DATA ONLY: Created for HackMysuru testing of dynamic jurisdiction and responsibility transitions. Not an official legal allocation."
+  },
+  "authorities": [
+    {
+      "code": "MCC",
+      "name": "Mysuru City Corporation",
+      "type": "MUNICIPAL_CORPORATION"
+    },
+    {
+      "code": "SRIRANGAPATNA_TP",
+      "name": "Srirangapatna Town Panchayat",
+      "type": "TOWN_PANCHAYAT"
+    },
+    {
+      "code": "KADAKOLA_TP",
+      "name": "Kadakola Town Panchayat",
+      "type": "TOWN_PANCHAYAT"
+    },
+    {
+      "code": "CHAMUNDI_GP",
+      "name": "Chamundi Hills Gram Panchayat",
+      "type": "GRAM_PANCHAYAT"
+    },
+    {
+      "code": "CESC",
+      "name": "Chamundeshwari Electricity Supply Company",
+      "type": "UTILITY_BOARD"
+    },
+    {
+      "code": "SPECIAL_INFRA_AUTHORITY",
+      "name": "Mysuru Urban Infrastructure Development Authority",
+      "type": "SPECIAL_AUTHORITY"
+    }
+  ],
+  "departments": [
+    {
+      "authorityCode": "MCC",
+      "code": "MCC_ROADS",
+      "name": "Road Infrastructure & Civil Maintenance",
+      "description": "Maintenance of arterial, sub-arterial, and residential ward roads within MCC"
+    },
+    {
+      "authorityCode": "MCC",
+      "code": "MCC_DRAINAGE",
+      "name": "Drainage & Stormwater Department",
+      "description": "Cleaning, desilting, and maintenance of stormwater drains and culverts"
+    },
+    {
+      "authorityCode": "MCC",
+      "code": "MCC_SWM",
+      "name": "Solid Waste Management Wing",
+      "description": "Domestic waste collection, garbage clearing, and illegal dumping prevention"
+    },
+    {
+      "authorityCode": "MCC",
+      "code": "MCC_ELECTRICAL",
+      "name": "Electrical & Streetlighting Maintenance",
+      "description": "Public streetlight poles, sodium/LED luminaires, and street wiring"
+    },
+    {
+      "authorityCode": "SRIRANGAPATNA_TP",
+      "code": "STP_ROADS",
+      "name": "Town Panchayat Public Works Wing",
+      "description": "Local town roads and connectivity corridors"
+    },
+    {
+      "authorityCode": "SRIRANGAPATNA_TP",
+      "code": "STP_CIVIC",
+      "name": "Civic Amenities & Sanitation",
+      "description": "Sanitation and waste clearance in Town Panchayat limits"
+    },
+    {
+      "authorityCode": "KADAKOLA_TP",
+      "code": "KTP_ENGINEERING",
+      "name": "Town Panchayat Engineering Section",
+      "description": "Engineering, public works, and health maintenance"
+    },
+    {
+      "authorityCode": "CHAMUNDI_GP",
+      "code": "CGP_VILLAGE",
+      "name": "Panchayat Rural Works & Sanitation",
+      "description": "Gram Panchayat rural roads, village drainage, and general maintenance"
+    },
+    {
+      "authorityCode": "SPECIAL_INFRA_AUTHORITY",
+      "code": "SIA_RAPID_ROADS",
+      "name": "Rapid Infrastructure Corridors Unit",
+      "description": "Specialized multi-lane asphalt and arterial roadway maintenance"
+    }
+  ],
+  "rules": [
+    {
+      "jurisdictionCode": "MCC_WARD_42",
+      "issueCategory": "POTHOLE",
+      "authorityCode": "MCC",
+      "departmentCode": "MCC_ROADS",
+      "version": "2026-V1",
+      "validFrom": "2026-01-01T00:00:00Z",
+      "validUntil": "2026-09-20T00:00:00Z",
+      "priority": 100,
+      "description": "Ward 42 Pothole Maintenance under MCC Roads (Valid until 2026-09-20 transition)"
+    },
+    {
+      "jurisdictionCode": "MCC_WARD_42",
+      "issueCategory": "POTHOLE",
+      "authorityCode": "SPECIAL_INFRA_AUTHORITY",
+      "departmentCode": "SIA_RAPID_ROADS",
+      "version": "2026-V2",
+      "validFrom": "2026-09-20T00:00:00Z",
+      "validUntil": null,
+      "priority": 100,
+      "description": "Ward 42 Pothole Maintenance transitioned to Special Urban Infrastructure Authority (Valid from 2026-09-20 onwards)"
+    },
+    {
+      "jurisdictionCode": "MCC_WARD_42",
+      "issueCategory": "BLOCKED_DRAIN",
+      "authorityCode": "MCC",
+      "departmentCode": "MCC_DRAINAGE",
+      "version": "2026-V1",
+      "validFrom": "2026-01-01T00:00:00Z",
+      "validUntil": null,
+      "priority": 100,
+      "description": "Ward 42 Drainage and culvert maintenance under MCC Drainage Wing"
+    },
+    {
+      "jurisdictionCode": "MCC_WARD_42",
+      "issueCategory": "GARBAGE_OVERFLOW",
+      "authorityCode": "MCC",
+      "departmentCode": "MCC_SWM",
+      "version": "2026-V1",
+      "validFrom": "2026-01-01T00:00:00Z",
+      "validUntil": null,
+      "priority": 100,
+      "description": "Ward 42 Solid waste collection and garbage clearance under MCC SWM"
+    },
+    {
+      "jurisdictionCode": "MCC_WARD_42",
+      "issueCategory": "ILLEGAL_DUMPING",
+      "authorityCode": "MCC",
+      "departmentCode": "MCC_SWM",
+      "version": "2026-V1",
+      "validFrom": "2026-01-01T00:00:00Z",
+      "validUntil": null,
+      "priority": 100,
+      "description": "Ward 42 Illegal dumping enforcement under MCC SWM"
+    },
+    {
+      "jurisdictionCode": "MCC_WARD_42",
+      "issueCategory": "BROKEN_STREETLIGHT",
+      "authorityCode": "MCC",
+      "departmentCode": "MCC_ELECTRICAL",
+      "version": "2026-V1",
+      "validFrom": "2026-01-01T00:00:00Z",
+      "validUntil": null,
+      "priority": 100,
+      "description": "Ward 42 Public lighting and pole repairs under MCC Electrical Wing"
+    },
+    {
+      "jurisdictionCode": "SRIRANGAPATNA_TP",
+      "issueCategory": "POTHOLE",
+      "authorityCode": "SRIRANGAPATNA_TP",
+      "departmentCode": "STP_ROADS",
+      "version": "2026-V1",
+      "validFrom": "2026-01-01T00:00:00Z",
+      "validUntil": null,
+      "priority": 100,
+      "description": "Srirangapatna Town Panchayat road maintenance"
+    },
+    {
+      "jurisdictionCode": "SRIRANGAPATNA_TP",
+      "issueCategory": "GARBAGE_OVERFLOW",
+      "authorityCode": "SRIRANGAPATNA_TP",
+      "departmentCode": "STP_CIVIC",
+      "version": "2026-V1",
+      "validFrom": "2026-01-01T00:00:00Z",
+      "validUntil": null,
+      "priority": 100,
+      "description": "Srirangapatna Town Panchayat sanitation clearance"
+    },
+    {
+      "jurisdictionCode": "KADAKOLA_TP",
+      "issueCategory": "POTHOLE",
+      "authorityCode": "KADAKOLA_TP",
+      "departmentCode": "KTP_ENGINEERING",
+      "version": "2026-V1",
+      "validFrom": "2026-01-01T00:00:00Z",
+      "validUntil": null,
+      "priority": 100,
+      "description": "Kadakola Town Panchayat engineering section road maintenance"
+    },
+    {
+      "jurisdictionCode": "CHAMUNDI_GP",
+      "issueCategory": "POTHOLE",
+      "authorityCode": "CHAMUNDI_GP",
+      "departmentCode": "CGP_VILLAGE",
+      "version": "2026-V1",
+      "validFrom": "2026-01-01T00:00:00Z",
+      "validUntil": null,
+      "priority": 100,
+      "description": "Chamundi Hills Gram Panchayat rural roadway repairs"
+    },
+    {
+      "jurisdictionCode": "DISPUTED_ZONE_A",
+      "issueCategory": "POTHOLE",
+      "authorityCode": "MCC",
+      "departmentCode": "MCC_ROADS",
+      "version": "2026-V1",
+      "validFrom": "2026-01-01T00:00:00Z",
+      "validUntil": null,
+      "priority": 100,
+      "description": "Disputed Zone A Rule 1: MCC claims responsibility (Conflict test case)"
+    },
+    {
+      "jurisdictionCode": "DISPUTED_ZONE_A",
+      "issueCategory": "POTHOLE",
+      "authorityCode": "CHAMUNDI_GP",
+      "departmentCode": "CGP_VILLAGE",
+      "version": "2026-V1",
+      "validFrom": "2026-01-01T00:00:00Z",
+      "validUntil": null,
+      "priority": 100,
+      "description": "Disputed Zone A Rule 2: Chamundi GP simultaneously claims responsibility (Conflict test case)"
+    }
+  ]
+}

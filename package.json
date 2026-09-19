@@ -1,0 +1,27 @@
+{
+  "name": "hackmysuru-civicflow",
+  "version": "1.0.0",
+  "description": "CivicFlow - Unified Civic Incident & Accountability Platform for Mysuru",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "install:all": "npm install --prefix backend && npm install --prefix frontend",
+    "dev:backend": "npm run dev --prefix backend",
+    "dev:frontend": "npm run dev --prefix frontend",
+    "build:frontend": "npm run build --prefix frontend",
+    "migrate": "npm run migrate --prefix backend",
+    "promote": "node backend/src/scripts/promote.js"
+  },
+  "keywords": [
+    "civictech",
+    "hackmysuru",
+    "mysuru",
+    "incident-routing",
+    "rbac"
+  ],
+  "author": "HackMysuru Team",
+  "license": "ISC"
+}

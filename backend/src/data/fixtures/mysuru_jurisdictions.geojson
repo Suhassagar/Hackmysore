@@ -1,0 +1,179 @@
+{
+  "type": "FeatureCollection",
+  "metadata": {
+    "title": "HackMysuru Synthetic Development Jurisdictions Fixture",
+    "description": "Clearly labelled development fixture for temporal geospatial testing. NOT official government boundary data.",
+    "srid": 4326,
+    "version": "1.0.0"
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "code": "MCC_WARD_42",
+        "name": "Ward 42 - Jayalakshmipuram",
+        "type": "MCC_WARD",
+        "version": "2026-V1",
+        "valid_from": "2026-01-01T00:00:00Z",
+        "valid_until": "2026-09-20T00:00:00Z",
+        "description": "Historical V1 boundary for Ward 42 valid until September 20, 2026"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [76.6200, 12.3000],
+            [76.6500, 12.3000],
+            [76.6500, 12.3250],
+            [76.6200, 12.3250],
+            [76.6200, 12.3000]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "code": "MCC_WARD_42",
+        "name": "Ward 42 - Jayalakshmipuram",
+        "type": "MCC_WARD",
+        "version": "2026-V2",
+        "valid_from": "2026-09-20T00:00:00Z",
+        "valid_until": null,
+        "description": "Expanded V2 boundary for Ward 42 valid from September 20, 2026 onwards"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [76.6200, 12.3000],
+            [76.6600, 12.3000],
+            [76.6600, 12.3350],
+            [76.6200, 12.3350],
+            [76.6200, 12.3000]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "code": "SRIRANGAPATNA_TP",
+        "name": "Srirangapatna Town Panchayat",
+        "type": "TOWN_PANCHAYAT",
+        "version": "2026-V1",
+        "valid_from": "2026-01-01T00:00:00Z",
+        "valid_until": null,
+        "description": "Northern peri-urban boundary"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [76.6800, 12.4000],
+            [76.7200, 12.4000],
+            [76.7200, 12.4400],
+            [76.6800, 12.4400],
+            [76.6800, 12.4000]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "code": "KADAKOLA_TP",
+        "name": "Kadakola Town Panchayat",
+        "type": "TOWN_PANCHAYAT",
+        "version": "2026-V1",
+        "valid_from": "2026-01-01T00:00:00Z",
+        "valid_until": null,
+        "description": "Southern industrial corridor boundary"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [76.6500, 12.1800],
+            [76.7000, 12.1800],
+            [76.7000, 12.2200],
+            [76.6500, 12.2200],
+            [76.6500, 12.1800]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "code": "CHAMUNDI_GP",
+        "name": "Chamundi Hills Gram Panchayat",
+        "type": "GRAM_PANCHAYAT",
+        "version": "2026-V1",
+        "valid_from": "2026-01-01T00:00:00Z",
+        "valid_until": null,
+        "description": "Eastern heritage and rural hill area"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [76.6650, 12.2600],
+            [76.7100, 12.2600],
+            [76.7100, 12.2900],
+            [76.6650, 12.2900],
+            [76.6650, 12.2600]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "code": "DISPUTED_ZONE_A",
+        "name": "Disputed Zone A (MCC Ward 99)",
+        "type": "MCC_WARD",
+        "version": "2026-V1",
+        "valid_from": "2026-01-01T00:00:00Z",
+        "valid_until": null,
+        "description": "Test polygon for Case C: JURISDICTION_CONFLICT (overlaps Zone B)"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [76.7500, 12.3500],
+            [76.7700, 12.3500],
+            [76.7700, 12.3700],
+            [76.7500, 12.3700],
+            [76.7500, 12.3500]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "code": "DISPUTED_ZONE_B",
+        "name": "Disputed Zone B (Periphery Gram Panchayat)",
+        "type": "GRAM_PANCHAYAT",
+        "version": "2026-V1",
+        "valid_from": "2026-01-01T00:00:00Z",
+        "valid_until": null,
+        "description": "Test polygon for Case C: JURISDICTION_CONFLICT (overlaps Zone A)"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [76.7550, 12.3550],
+            [76.7750, 12.3550],
+            [76.7750, 12.3750],
+            [76.7550, 12.3750],
+            [76.7550, 12.3550]
+          ]
+        ]
+      }
+    }
+  ]
+}
