@@ -201,11 +201,11 @@ class ResponsibilityService {
 
     // 3. Determine category to use and track source
     let issueCategoryUsed = report.category;
-    let categorySource = 'REPORT_SUBMISSION';
+    let categorySource = 'CITIZEN_FALLBACK';
 
     if (analysis && analysis.category) {
       issueCategoryUsed = analysis.category;
-      categorySource = 'AI_ANALYSIS';
+      categorySource = 'AI_DERIVED';
     }
 
     const reportTime = report.reported_at || report.created_at || new Date();
@@ -229,8 +229,8 @@ class ResponsibilityService {
     // 6. Persist snapshot in database
     const snapshot = await db.createReportRoutingSnapshot({
       reportId: report.id,
-      jurisdictionId: jurSnapshot?.jurisdiction_id || jurSnapshot?.jurisdictionId || jurSnapshot?.id || null,
-      jurisdictionBoundaryId: jurSnapshot?.jurisdiction_boundary_id || jurSnapshot?.jurisdictionBoundaryId || jurSnapshot?.boundary_id || null,
+      jurisdictionId: jurSnapshot?.jurisdiction_id || jurSnapshot?.jurisdictionId || null,
+      jurisdictionBoundaryId: jurSnapshot?.jurisdiction_boundary_id || jurSnapshot?.jurisdictionBoundaryId || null,
       responsibilityRuleId: resolution.responsibility_rule_id,
       authorityId: resolution.authority?.id || null,
       departmentId: resolution.department?.id || null,
@@ -256,8 +256,8 @@ class ResponsibilityService {
           ...snapshot,
           authority_id: resolution.authority.id,
           department_id: resolution.department.id,
-          jurisdiction_id: jurSnapshot?.jurisdiction_id || jurSnapshot?.id || null,
-          jurisdiction_boundary_id: jurSnapshot?.jurisdiction_boundary_id || jurSnapshot?.boundary_id || null,
+          jurisdiction_id: jurSnapshot?.jurisdiction_id || jurSnapshot?.jurisdictionId || null,
+          jurisdiction_boundary_id: jurSnapshot?.jurisdiction_boundary_id || jurSnapshot?.jurisdictionBoundaryId || null,
           responsibility_rule_id: resolution.responsibility_rule_id || null,
           routing_status: assessment.status,
           decision_source: 'AUTOMATIC',

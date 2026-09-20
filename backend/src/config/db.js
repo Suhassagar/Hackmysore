@@ -30,6 +30,10 @@ function generateFallbackCaseNumber() {
   return `CIV-${year}-${String(num).padStart(6, '0')}`;
 }
 
+function isUuid(val) {
+  return typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+}
+
 // Seed initial default test users in fallback store
 function seedFallbackUsers() {
   if (fallbackUsers.size === 0) {
@@ -1120,7 +1124,10 @@ const db = {
 
   async getJurisdictionById(id) {
     if (isPostgresConnected && pool) {
-      const res = await pool.query('SELECT * FROM jurisdictions WHERE id = $1 OR code = $1', [id]);
+      const query = isUuid(id)
+        ? 'SELECT * FROM jurisdictions WHERE id = $1'
+        : 'SELECT * FROM jurisdictions WHERE code = $1';
+      const res = await pool.query(query, [id]);
       return res.rows[0] || null;
     }
     const jur = fallbackJurisdictions.get(id);
@@ -1239,7 +1246,10 @@ const db = {
 
   async getAuthorityById(id) {
     if (isPostgresConnected && pool) {
-      const res = await pool.query('SELECT * FROM authorities WHERE id = $1 OR code = $1', [id]);
+      const query = isUuid(id)
+        ? 'SELECT * FROM authorities WHERE id = $1'
+        : 'SELECT * FROM authorities WHERE code = $1';
+      const res = await pool.query(query, [id]);
       return res.rows[0] || null;
     }
     const auth = fallbackAuthorities.get(id);
@@ -1249,7 +1259,10 @@ const db = {
 
   async getDepartmentById(id) {
     if (isPostgresConnected && pool) {
-      const res = await pool.query('SELECT * FROM departments WHERE id = $1 OR code = $1', [id]);
+      const query = isUuid(id)
+        ? 'SELECT * FROM departments WHERE id = $1'
+        : 'SELECT * FROM departments WHERE code = $1';
+      const res = await pool.query(query, [id]);
       return res.rows[0] || null;
     }
     const dept = fallbackDepartments.get(id);
@@ -1458,6 +1471,13 @@ const db = {
     explanation,
     routedAt = new Date(),
   }) {
+    let finalCategorySource = categorySource;
+    if (finalCategorySource === 'AI_ANALYSIS') finalCategorySource = 'AI_DERIVED';
+    if (finalCategorySource === 'REPORT_SUBMISSION') finalCategorySource = 'CITIZEN_FALLBACK';
+    if (!['AI_DERIVED', 'CITIZEN_FALLBACK', 'MANUAL_OVERRIDE'].includes(finalCategorySource)) {
+      finalCategorySource = 'AI_DERIVED';
+    }
+
     if (isPostgresConnected && pool) {
       const res = await pool.query(
         `INSERT INTO report_routing (
@@ -1493,7 +1513,7 @@ const db = {
           authorityId,
           departmentId,
           issueCategoryUsed,
-          categorySource,
+          finalCategorySource,
           routeStatus,
           routingStatus,
           JSON.stringify(reviewReasons),
@@ -1522,7 +1542,7 @@ const db = {
       authority_id: authorityId,
       department_id: departmentId,
       issue_category_used: issueCategoryUsed,
-      category_source: categorySource,
+      category_source: finalCategorySource,
       route_status: routeStatus,
       routing_status: routingStatus,
       review_reasons: reviewReasons,

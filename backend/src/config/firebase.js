@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 
-let firebaseAdmin = null;
+let firebaseApp = null;
+let firebaseAuth = null;
 
 function initFirebase() {
   const projectId = process.env.FIREBASE_PROJECT_ID;
@@ -9,17 +10,22 @@ function initFirebase() {
 
   if (projectId && clientEmail && privateKey) {
     try {
-      const admin = require('firebase-admin');
-      if (!admin.apps.length) {
-        admin.initializeApp({
-          credential: admin.credential.cert({
+      const { initializeApp, cert, getApps } = require('firebase-admin/app');
+      const { getAuth } = require('firebase-admin/auth');
+
+      const apps = getApps();
+      if (!apps.length) {
+        firebaseApp = initializeApp({
+          credential: cert({
             projectId,
             clientEmail,
             privateKey: privateKey.replace(/\\n/g, '\n'),
           }),
         });
+      } else {
+        firebaseApp = apps[0];
       }
-      firebaseAdmin = admin;
+      firebaseAuth = getAuth(firebaseApp);
       console.log('[Firebase] Firebase Admin SDK initialized successfully.');
     } catch (err) {
       console.warn(`[Firebase] Could not initialize Firebase Admin SDK (${err.message}). Using local token verifier.`);
@@ -41,9 +47,9 @@ async function verifyAuthToken(token) {
   }
 
   // 1. Try Firebase Admin if initialized
-  if (firebaseAdmin) {
+  if (firebaseAuth) {
     try {
-      const decodedToken = await firebaseAdmin.auth().verifyIdToken(token);
+      const decodedToken = await firebaseAuth.verifyIdToken(token);
       return {
         uid: decodedToken.uid,
         email: decodedToken.email,

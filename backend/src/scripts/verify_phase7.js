@@ -22,6 +22,7 @@
  * TEST 18: Citizen cannot see unauthorized reports/cases (403 Forbidden).
  */
 
+require('dotenv').config();
 const http = require('http');
 
 const BASE_URL = 'http://localhost:5000';
