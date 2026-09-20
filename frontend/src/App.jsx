@@ -10,6 +10,8 @@ import { ReportIssue } from './pages/ReportIssue';
 import { MyReports } from './pages/MyReports';
 import { ReportDetail } from './pages/ReportDetail';
 import { ReviewQueue } from './pages/ReviewQueue';
+import { StaffCases } from './pages/StaffCases';
+import { CaseDetail } from './pages/CaseDetail';
 
 function App() {
   return (
@@ -57,6 +59,22 @@ function App() {
               element={
                 <ProtectedRoute>
                   <ReviewQueue />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/staff/cases"
+              element={
+                <ProtectedRoute>
+                  <StaffCases />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/staff/cases/:id"
+              element={
+                <ProtectedRoute>
+                  <CaseDetail />
                 </ProtectedRoute>
               }
             />

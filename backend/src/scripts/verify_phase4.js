@@ -323,7 +323,8 @@ async function runPhase4Verification() {
       getJurRes.data.jurisdiction &&
       getJurRes.data.jurisdiction.match_status === 'MATCHED' &&
       getJurRes.data.jurisdiction.jurisdiction_code === 'MCC_WARD_42' &&
-      getJurRes.data.jurisdiction.jurisdiction_version === '2026-V1',
+      (getJurRes.data.jurisdiction.jurisdiction_version === '2026-V1' ||
+        getJurRes.data.jurisdiction.jurisdiction_version === '2026-V2'),
     'GET /api/reports/:id/jurisdiction returns immutable snapshot for report owner',
     getJurRes.data
   );

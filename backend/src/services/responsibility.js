@@ -247,6 +247,26 @@ class ResponsibilityService {
       routedAt: new Date(),
     });
 
+    // 7. Phase 7: Automatic case creation when report is AUTO_ROUTED
+    let createdCase = null;
+    if (assessment.status === 'AUTO_ROUTED' && resolution.authority?.id && resolution.department?.id) {
+      try {
+        const caseService = require('./caseService');
+        createdCase = await caseService.createCaseForReport(report.id, {
+          ...snapshot,
+          authority_id: resolution.authority.id,
+          department_id: resolution.department.id,
+          jurisdiction_id: jurSnapshot?.jurisdiction_id || jurSnapshot?.id || null,
+          jurisdiction_boundary_id: jurSnapshot?.jurisdiction_boundary_id || jurSnapshot?.boundary_id || null,
+          responsibility_rule_id: resolution.responsibility_rule_id || null,
+          routing_status: assessment.status,
+          decision_source: 'AUTOMATIC',
+        });
+      } catch (caseErr) {
+        console.warn(`[CaseService] Auto-create case for Report ${report.id} failed:`, caseErr.message);
+      }
+    }
+
     return {
       ...snapshot,
       authority_code: resolution.authority?.code || null,
@@ -263,6 +283,7 @@ class ResponsibilityService {
       decision_source: assessment.decisionSource,
       review_required: assessment.reviewRequired,
       assessment,
+      case: createdCase,
     };
   }
 

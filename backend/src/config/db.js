@@ -19,6 +19,17 @@ const fallbackResponsibilityRules = []; // array of rules
 const fallbackReportRoutings = new Map(); // report_id -> routing snapshot
 const fallbackRoutingReviews = []; // array of review audit records
 
+// Phase 7: Operational Civic Cases & Events
+const fallbackCases = new Map(); // case_id -> case
+const fallbackCaseEvents = []; // array of case events
+let fallbackCaseSeq = 10001;
+
+function generateFallbackCaseNumber() {
+  const year = new Date().getFullYear();
+  const num = fallbackCaseSeq++;
+  return `CIV-${year}-${String(num).padStart(6, '0')}`;
+}
+
 // Seed initial default test users in fallback store
 function seedFallbackUsers() {
   if (fallbackUsers.size === 0) {
@@ -32,12 +43,34 @@ function seedFallbackUsers() {
       created_at: now,
       updated_at: now,
     });
+    fallbackUsers.set('dev-citizen-02', {
+      id: '00000000-0000-0000-0000-000000000004',
+      auth_uid: 'dev-citizen-02',
+      name: 'Ananya Deshmukh (Other Citizen)',
+      email: 'citizen2@mysuru.civicflow.in',
+      role: 'CITIZEN',
+      created_at: now,
+      updated_at: now,
+    });
     fallbackUsers.set('dev-staff-01', {
       id: '00000000-0000-0000-0000-000000000002',
       auth_uid: 'dev-staff-01',
       name: 'Radha Shastry (MCC Ward Officer)',
       email: 'staff@mysuru.civicflow.in',
       role: 'STAFF',
+      authority_id: null,
+      department_id: null,
+      created_at: now,
+      updated_at: now,
+    });
+    fallbackUsers.set('dev-staff-drainage', {
+      id: '00000000-0000-0000-0000-000000000005',
+      auth_uid: 'dev-staff-drainage',
+      name: 'Mahesh Gowda (MCC Drainage Officer)',
+      email: 'staff-drainage@mysuru.civicflow.in',
+      role: 'STAFF',
+      authority_id: null,
+      department_id: null,
       created_at: now,
       updated_at: now,
     });
@@ -143,6 +176,23 @@ function seedFallbackResponsibilityRules() {
             });
           }
         }
+        // Scope fallback staff users to MCC authority and respective departments
+        const mccAuth = Array.from(fallbackAuthorities.values()).find((x) => x.code === 'MCC');
+        const mccRoads = mccAuth ? Array.from(fallbackDepartments.values()).find((x) => x.authority_id === mccAuth.id && x.code === 'MCC_ROADS') : null;
+        const mccDrainage = mccAuth ? Array.from(fallbackDepartments.values()).find((x) => x.authority_id === mccAuth.id && x.code === 'MCC_DRAINAGE') : null;
+
+        const staff01 = fallbackUsers.get('dev-staff-01');
+        if (staff01 && mccAuth) {
+          staff01.authority_id = mccAuth.id;
+          staff01.department_id = mccRoads ? mccRoads.id : null;
+        }
+
+        const staffDrainage = fallbackUsers.get('dev-staff-drainage');
+        if (staffDrainage && mccAuth) {
+          staffDrainage.authority_id = mccAuth.id;
+          staffDrainage.department_id = mccDrainage ? mccDrainage.id : null;
+        }
+
         console.log(`[DB] Fallback in-memory store pre-seeded with ${fallbackAuthorities.size} authorities, ${fallbackDepartments.size} departments, ${fallbackResponsibilityRules.length} responsibility rules.`);
       }
     } catch (err) {
@@ -441,8 +491,91 @@ async function initDb() {
       );
       CREATE INDEX IF NOT EXISTS idx_routing_reviews_report ON routing_reviews (report_id);
       CREATE INDEX IF NOT EXISTS idx_routing_reviews_reviewer ON routing_reviews (reviewed_by);
+
+      -- Phase 7: Operational Civic Cases & Event Audit Log
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS authority_id UUID REFERENCES authorities(id);
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS department_id UUID REFERENCES departments(id);
+      CREATE INDEX IF NOT EXISTS idx_users_authority_dept ON users(authority_id, department_id);
+
+      CREATE SEQUENCE IF NOT EXISTS civic_case_seq START WITH 10001;
+
+      CREATE TABLE IF NOT EXISTS civic_cases (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        case_number VARCHAR(50) UNIQUE NOT NULL,
+        report_id UUID NOT NULL UNIQUE REFERENCES reports(id) ON DELETE CASCADE,
+        routing_id UUID REFERENCES report_routing(id) ON DELETE SET NULL,
+        authority_id UUID NOT NULL REFERENCES authorities(id),
+        department_id UUID NOT NULL REFERENCES departments(id),
+        jurisdiction_id UUID REFERENCES jurisdictions(id),
+        jurisdiction_boundary_id UUID REFERENCES jurisdiction_boundaries(id),
+        responsibility_rule_id UUID REFERENCES responsibility_rules(id),
+        status VARCHAR(50) NOT NULL DEFAULT 'UNASSIGNED' CHECK (status IN (
+          'UNASSIGNED',
+          'ASSIGNED',
+          'ACKNOWLEDGED',
+          'IN_PROGRESS',
+          'ON_HOLD',
+          'RESOLVED',
+          'CLOSED'
+        )),
+        priority VARCHAR(20) NOT NULL DEFAULT 'MEDIUM' CHECK (priority IN (
+          'LOW',
+          'MEDIUM',
+          'HIGH',
+          'CRITICAL'
+        )),
+        assigned_to UUID REFERENCES users(id),
+        assigned_at TIMESTAMPTZ,
+        acknowledged_at TIMESTAMPTZ,
+        started_at TIMESTAMPTZ,
+        resolved_at TIMESTAMPTZ,
+        resolved_by UUID REFERENCES users(id),
+        resolution_notes TEXT,
+        on_hold_reason VARCHAR(50) CHECK (on_hold_reason IS NULL OR on_hold_reason IN (
+          'WAITING_FOR_MATERIAL',
+          'WEATHER',
+          'ACCESS_BLOCKED',
+          'REQUIRES_EXTERNAL_TEAM',
+          'OTHER'
+        )),
+        on_hold_notes TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_civic_cases_case_number ON civic_cases(case_number);
+      CREATE INDEX IF NOT EXISTS idx_civic_cases_report_id ON civic_cases(report_id);
+      CREATE INDEX IF NOT EXISTS idx_civic_cases_status ON civic_cases(status);
+      CREATE INDEX IF NOT EXISTS idx_civic_cases_authority_dept ON civic_cases(authority_id, department_id);
+      CREATE INDEX IF NOT EXISTS idx_civic_cases_assigned_to ON civic_cases(assigned_to);
+      CREATE INDEX IF NOT EXISTS idx_civic_cases_created_at ON civic_cases(created_at);
+
+      CREATE TABLE IF NOT EXISTS case_events (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        case_id UUID NOT NULL REFERENCES civic_cases(id) ON DELETE CASCADE,
+        event_type VARCHAR(50) NOT NULL CHECK (event_type IN (
+          'CASE_CREATED',
+          'CASE_ASSIGNED',
+          'CASE_REASSIGNED',
+          'CASE_ACKNOWLEDGED',
+          'CASE_STARTED',
+          'CASE_ON_HOLD',
+          'CASE_RESUMED',
+          'CASE_NOTE_ADDED',
+          'CASE_RESOLVED',
+          'CASE_CLOSED'
+        )),
+        from_status VARCHAR(50),
+        to_status VARCHAR(50),
+        actor_user_id UUID NOT NULL REFERENCES users(id),
+        note TEXT,
+        metadata JSONB DEFAULT '{}'::jsonb,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_case_events_case_id ON case_events(case_id);
+      CREATE INDEX IF NOT EXISTS idx_case_events_actor ON case_events(actor_user_id);
+      CREATE INDEX IF NOT EXISTS idx_case_events_created_at ON case_events(created_at);
     `);
-    console.log('[DB] PostGIS, Jurisdictions, Responsibility Rules, and Historical Routing schemas verified in PostgreSQL.');
+    console.log('[DB] PostGIS, Jurisdictions, Responsibility Rules, and Civic Cases schemas verified in PostgreSQL.');
     client.release();
   } catch (err) {
     console.warn(`[DB] Live PostgreSQL/PostGIS connection failed (${err.message}).`);
@@ -1764,6 +1897,720 @@ const db = {
       limit: limitNum,
       totalPages: Math.ceil(total / limitNum),
     };
+  },
+
+  // -------------------------------------------------------------
+  // Phase 7: Operational Civic Cases & Event Audit Log Methods
+  // -------------------------------------------------------------
+
+  async getUserById(id) {
+    if (isPostgresConnected && pool) {
+      const res = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
+      return res.rows[0] || null;
+    }
+    return Array.from(fallbackUsers.values()).find((u) => u.id === id) || null;
+  },
+
+  async getStaffUsers(filters = {}) {
+    if (isPostgresConnected && pool) {
+      let q = "SELECT id, name, email, role, authority_id, department_id FROM users WHERE role IN ('STAFF', 'ADMIN')";
+      const params = [];
+      if (filters.authorityId) {
+        params.push(filters.authorityId);
+        q += ` AND (authority_id = $${params.length} OR role = 'ADMIN')`;
+      }
+      if (filters.departmentId) {
+        params.push(filters.departmentId);
+        q += ` AND (department_id = $${params.length} OR role = 'ADMIN')`;
+      }
+      q += ' ORDER BY name ASC';
+      const res = await pool.query(q, params);
+      return res.rows;
+    }
+
+    return Array.from(fallbackUsers.values())
+      .filter((u) => u.role === 'STAFF' || u.role === 'ADMIN')
+      .filter((u) => !filters.authorityId || u.role === 'ADMIN' || !u.authority_id || u.authority_id === filters.authorityId)
+      .filter((u) => !filters.departmentId || u.role === 'ADMIN' || !u.department_id || u.department_id === filters.departmentId)
+      .map((u) => ({
+        id: u.id,
+        name: u.name,
+        email: u.email,
+        role: u.role,
+        authority_id: u.authority_id,
+        department_id: u.department_id,
+      }));
+  },
+
+  async createCase(caseData) {
+    const {
+      report_id,
+      routing_id,
+      authority_id,
+      department_id,
+      jurisdiction_id,
+      jurisdiction_boundary_id,
+      responsibility_rule_id,
+      priority = 'MEDIUM',
+      status = 'UNASSIGNED',
+      assigned_to = null,
+      actor_user_id = null,
+      note = 'Case created from routed report.',
+    } = caseData;
+
+    // 1. PostgreSQL implementation with transaction
+    if (isPostgresConnected && pool) {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+
+        // Check if case already exists (idempotency guard)
+        const existingRes = await client.query('SELECT * FROM civic_cases WHERE report_id = $1', [report_id]);
+        if (existingRes.rows.length > 0) {
+          await client.query('COMMIT');
+          return existingRes.rows[0];
+        }
+
+        // Generate case number
+        const seqRes = await client.query("SELECT nextval('civic_case_seq') AS num");
+        const seqNum = seqRes.rows[0].num;
+        const caseNumber = `CIV-${new Date().getFullYear()}-${String(seqNum).padStart(6, '0')}`;
+
+        const initialStatus = assigned_to ? 'ASSIGNED' : status;
+        const assignedAt = assigned_to ? new Date().toISOString() : null;
+
+        const insertCaseRes = await client.query(
+          `INSERT INTO civic_cases (
+            case_number, report_id, routing_id, authority_id, department_id,
+            jurisdiction_id, jurisdiction_boundary_id, responsibility_rule_id,
+            status, priority, assigned_to, assigned_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+          RETURNING *`,
+          [
+            caseNumber,
+            report_id,
+            routing_id,
+            authority_id,
+            department_id,
+            jurisdiction_id,
+            jurisdiction_boundary_id,
+            responsibility_rule_id,
+            initialStatus,
+            priority,
+            assigned_to,
+            assignedAt,
+          ]
+        );
+
+        const createdCase = insertCaseRes.rows[0];
+
+        // Create initial CASE_CREATED event
+        const actorId = actor_user_id || '00000000-0000-0000-0000-000000000003'; // admin fallback
+        await client.query(
+          `INSERT INTO case_events (
+            case_id, event_type, from_status, to_status, actor_user_id, note
+          ) VALUES ($1, $2, $3, $4, $5, $6)`,
+          [createdCase.id, 'CASE_CREATED', null, initialStatus, actorId, note]
+        );
+
+        if (assigned_to) {
+          await client.query(
+            `INSERT INTO case_events (
+              case_id, event_type, from_status, to_status, actor_user_id, note, metadata
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+            [
+              createdCase.id,
+              'CASE_ASSIGNED',
+              'UNASSIGNED',
+              'ASSIGNED',
+              actorId,
+              'Initially assigned during case creation.',
+              JSON.stringify({ assigned_to }),
+            ]
+          );
+        }
+
+        await client.query('COMMIT');
+        return createdCase;
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
+    }
+
+    // 2. Fallback in-memory implementation
+    // Check if case already exists
+    const existing = Array.from(fallbackCases.values()).find((c) => c.report_id === report_id);
+    if (existing) {
+      return existing;
+    }
+
+    const caseId = uuidv4();
+    const caseNumber = generateFallbackCaseNumber();
+    const initialStatus = assigned_to ? 'ASSIGNED' : status;
+    const now = new Date().toISOString();
+
+    const newCase = {
+      id: caseId,
+      case_number: caseNumber,
+      report_id,
+      routing_id,
+      authority_id,
+      department_id,
+      jurisdiction_id,
+      jurisdiction_boundary_id,
+      responsibility_rule_id,
+      status: initialStatus,
+      priority,
+      assigned_to: assigned_to || null,
+      assigned_at: assigned_to ? now : null,
+      acknowledged_at: null,
+      started_at: null,
+      resolved_at: null,
+      resolved_by: null,
+      resolution_notes: null,
+      on_hold_reason: null,
+      on_hold_notes: null,
+      created_at: now,
+      updated_at: now,
+    };
+
+    fallbackCases.set(caseId, newCase);
+
+    // Record CASE_CREATED event
+    const actorId = actor_user_id || '00000000-0000-0000-0000-000000000003';
+    fallbackCaseEvents.push({
+      id: uuidv4(),
+      case_id: caseId,
+      event_type: 'CASE_CREATED',
+      from_status: null,
+      to_status: initialStatus,
+      actor_user_id: actorId,
+      note,
+      metadata: {},
+      created_at: now,
+    });
+
+    if (assigned_to) {
+      fallbackCaseEvents.push({
+        id: uuidv4(),
+        case_id: caseId,
+        event_type: 'CASE_ASSIGNED',
+        from_status: 'UNASSIGNED',
+        to_status: 'ASSIGNED',
+        actor_user_id: actorId,
+        note: 'Initially assigned during case creation.',
+        metadata: { assigned_to },
+        created_at: now,
+      });
+    }
+
+    return newCase;
+  },
+
+  async getCaseById(id) {
+    if (isPostgresConnected && pool) {
+      const res = await pool.query(
+        `SELECT
+          c.*,
+          r.category,
+          r.description AS report_description,
+          r.photo_url,
+          r.latitude,
+          r.longitude,
+          r.location_accuracy AS accuracy,
+          r.location_status,
+          r.reporter_user_id AS report_user_id,
+          r.created_at AS report_created_at,
+          a.code AS authority_code,
+          a.name AS authority_name,
+          d.code AS department_code,
+          d.name AS department_name,
+          j.name AS jurisdiction_name,
+          j.code AS jurisdiction_code,
+          u_assign.name AS assigned_to_name,
+          u_assign.email AS assigned_to_email,
+          u_resolve.name AS resolved_by_name
+        FROM civic_cases c
+        JOIN reports r ON c.report_id = r.id
+        JOIN authorities a ON c.authority_id = a.id
+        JOIN departments d ON c.department_id = d.id
+        LEFT JOIN jurisdictions j ON c.jurisdiction_id = j.id
+        LEFT JOIN users u_assign ON c.assigned_to = u_assign.id
+        LEFT JOIN users u_resolve ON c.resolved_by = u_resolve.id
+        WHERE c.id = $1`,
+        [id]
+      );
+      if (res.rows.length === 0) return null;
+      const caseItem = res.rows[0];
+      const events = await this.getCaseEventsByCaseId(id);
+      return { ...caseItem, events };
+    }
+
+    const c = fallbackCases.get(id);
+    if (!c) return null;
+
+    const report = fallbackReports.get(c.report_id);
+    const auth = fallbackAuthorities.get(c.authority_id);
+    const dept = fallbackDepartments.get(c.department_id);
+    const jur = c.jurisdiction_id ? fallbackJurisdictions.get(c.jurisdiction_id) : null;
+    const assignedUser = c.assigned_to ? Array.from(fallbackUsers.values()).find((u) => u.id === c.assigned_to) : null;
+    const resolvedUser = c.resolved_by ? Array.from(fallbackUsers.values()).find((u) => u.id === c.resolved_by) : null;
+    const events = await this.getCaseEventsByCaseId(id);
+
+    return {
+      ...c,
+      category: report?.category,
+      report_description: report?.description,
+      photo_url: report?.photo_url,
+      latitude: report?.latitude,
+      longitude: report?.longitude,
+      accuracy: report?.location_accuracy,
+      location_status: report?.location_status,
+      report_user_id: report?.reporter_user_id,
+      report_created_at: report?.created_at,
+      authority_code: auth?.code,
+      authority_name: auth?.name,
+      department_code: dept?.code,
+      department_name: dept?.name,
+      jurisdiction_name: jur?.name,
+      jurisdiction_code: jur?.code,
+      assigned_to_name: assignedUser?.name || null,
+      assigned_to_email: assignedUser?.email || null,
+      resolved_by_name: resolvedUser?.name || null,
+      events,
+    };
+  },
+
+  async getCaseByReportId(reportId) {
+    if (isPostgresConnected && pool) {
+      const res = await pool.query('SELECT id FROM civic_cases WHERE report_id = $1', [reportId]);
+      if (res.rows.length === 0) return null;
+      return this.getCaseById(res.rows[0].id);
+    }
+
+    const found = Array.from(fallbackCases.values()).find((c) => c.report_id === reportId);
+    if (!found) return null;
+    return this.getCaseById(found.id);
+  },
+
+  async getCases(options = {}) {
+    const {
+      status,
+      authority_id,
+      department_id,
+      assigned_to,
+      view = 'active',
+      search,
+      page = 1,
+      limit = 20,
+    } = options;
+
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
+    const offset = (pageNum - 1) * limitNum;
+
+    if (isPostgresConnected && pool) {
+      let countQuery = `
+        SELECT COUNT(*)
+        FROM civic_cases c
+        JOIN reports r ON c.report_id = r.id
+        JOIN authorities a ON c.authority_id = a.id
+        JOIN departments d ON c.department_id = d.id
+        WHERE 1=1`;
+      let dataQuery = `
+        SELECT
+          c.*,
+          r.category,
+          r.description AS report_description,
+          r.latitude,
+          r.longitude,
+          r.created_at AS report_created_at,
+          a.code AS authority_code,
+          a.name AS authority_name,
+          d.code AS department_code,
+          d.name AS department_name,
+          j.name AS jurisdiction_name,
+          u_assign.name AS assigned_to_name
+        FROM civic_cases c
+        JOIN reports r ON c.report_id = r.id
+        JOIN authorities a ON c.authority_id = a.id
+        JOIN departments d ON c.department_id = d.id
+        LEFT JOIN jurisdictions j ON c.jurisdiction_id = j.id
+        LEFT JOIN users u_assign ON c.assigned_to = u_assign.id
+        WHERE 1=1`;
+
+      const params = [];
+
+      // View filtering
+      if (view === 'needs_attention') {
+        params.push(['UNASSIGNED', 'ON_HOLD']);
+        countQuery += ` AND c.status = ANY($${params.length})`;
+        dataQuery += ` AND c.status = ANY($${params.length})`;
+      } else if (view === 'my_cases' && assigned_to) {
+        params.push(assigned_to);
+        countQuery += ` AND c.assigned_to = $${params.length}`;
+        dataQuery += ` AND c.assigned_to = $${params.length}`;
+      } else if (status) {
+        params.push(status);
+        countQuery += ` AND c.status = $${params.length}`;
+        dataQuery += ` AND c.status = $${params.length}`;
+      } else if (view === 'active') {
+        countQuery += " AND c.status != 'CLOSED'";
+        dataQuery += " AND c.status != 'CLOSED'";
+      }
+
+      if (authority_id) {
+        params.push(authority_id);
+        countQuery += ` AND c.authority_id = $${params.length}`;
+        dataQuery += ` AND c.authority_id = $${params.length}`;
+      }
+
+      if (department_id) {
+        params.push(department_id);
+        countQuery += ` AND c.department_id = $${params.length}`;
+        dataQuery += ` AND c.department_id = $${params.length}`;
+      }
+
+      if (search) {
+        params.push(`%${search}%`);
+        countQuery += ` AND (c.case_number ILIKE $${params.length} OR r.description ILIKE $${params.length})`;
+        dataQuery += ` AND (c.case_number ILIKE $${params.length} OR r.description ILIKE $${params.length})`;
+      }
+
+      const countRes = await pool.query(countQuery, params);
+      const total = parseInt(countRes.rows[0].count, 10);
+
+      dataQuery += ` ORDER BY c.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+      const dataRes = await pool.query(dataQuery, [...params, limitNum, offset]);
+
+      return {
+        items: dataRes.rows,
+        total,
+        page: pageNum,
+        limit: limitNum,
+        totalPages: Math.ceil(total / limitNum),
+      };
+    }
+
+    // Fallback in-memory
+    let list = Array.from(fallbackCases.values());
+
+    if (view === 'needs_attention') {
+      list = list.filter((c) => c.status === 'UNASSIGNED' || c.status === 'ON_HOLD');
+    } else if (view === 'my_cases' && assigned_to) {
+      list = list.filter((c) => c.assigned_to === assigned_to);
+    } else if (status) {
+      list = list.filter((c) => c.status === status);
+    } else if (view === 'active') {
+      list = list.filter((c) => c.status !== 'CLOSED');
+    }
+
+    if (authority_id) {
+      list = list.filter((c) => c.authority_id === authority_id);
+    }
+    if (department_id) {
+      list = list.filter((c) => c.department_id === department_id);
+    }
+
+    if (search) {
+      const s = search.toLowerCase();
+      list = list.filter((c) => {
+        const rep = fallbackReports.get(c.report_id);
+        return (
+          c.case_number.toLowerCase().includes(s) ||
+          (rep && rep.description && rep.description.toLowerCase().includes(s))
+        );
+      });
+    }
+
+    list.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    const total = list.length;
+    const items = list.slice(offset, offset + limitNum).map((c) => {
+      const rep = fallbackReports.get(c.report_id);
+      const auth = fallbackAuthorities.get(c.authority_id);
+      const dept = fallbackDepartments.get(c.department_id);
+      const jur = c.jurisdiction_id ? fallbackJurisdictions.get(c.jurisdiction_id) : null;
+      const assignUser = c.assigned_to ? Array.from(fallbackUsers.values()).find((u) => u.id === c.assigned_to) : null;
+      return {
+        ...c,
+        category: rep?.category,
+        report_description: rep?.description,
+        latitude: rep?.latitude,
+        longitude: rep?.longitude,
+        authority_code: auth?.code,
+        authority_name: auth?.name,
+        department_code: dept?.code,
+        department_name: dept?.name,
+        jurisdiction_name: jur?.name,
+        assigned_to_name: assignUser?.name || null,
+      };
+    });
+
+    return {
+      items,
+      total,
+      page: pageNum,
+      limit: limitNum,
+      totalPages: Math.ceil(total / limitNum),
+    };
+  },
+
+  async updateCaseStatus(caseId, updateData) {
+    const { toStatus, actorUserId, note, onHoldReason, onHoldNotes } = updateData;
+    const now = new Date().toISOString();
+
+    if (isPostgresConnected && pool) {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+
+        const currentRes = await client.query('SELECT * FROM civic_cases WHERE id = $1 FOR UPDATE', [caseId]);
+        if (currentRes.rows.length === 0) {
+          throw new Error('Case not found');
+        }
+        const currentCase = currentRes.rows[0];
+
+        let eventType = 'CASE_ACKNOWLEDGED';
+        if (toStatus === 'ACKNOWLEDGED') eventType = 'CASE_ACKNOWLEDGED';
+        else if (toStatus === 'IN_PROGRESS') eventType = currentCase.status === 'ON_HOLD' ? 'CASE_RESUMED' : 'CASE_STARTED';
+        else if (toStatus === 'ON_HOLD') eventType = 'CASE_ON_HOLD';
+        else if (toStatus === 'RESOLVED') eventType = 'CASE_RESOLVED';
+        else if (toStatus === 'CLOSED') eventType = 'CASE_CLOSED';
+
+        const updates = ['status = $1', 'updated_at = NOW()'];
+        const params = [toStatus, caseId];
+
+        if (toStatus === 'ACKNOWLEDGED') {
+          updates.push('acknowledged_at = NOW()');
+        } else if (toStatus === 'IN_PROGRESS') {
+          updates.push('started_at = COALESCE(started_at, NOW())');
+        } else if (toStatus === 'ON_HOLD') {
+          params.push(onHoldReason);
+          updates.push(`on_hold_reason = $${params.length}`);
+          params.push(onHoldNotes || note || null);
+          updates.push(`on_hold_notes = $${params.length}`);
+        } else if (toStatus === 'RESOLVED') {
+          updates.push('resolved_at = NOW()');
+          params.push(actorUserId);
+          updates.push(`resolved_by = $${params.length}`);
+          params.push(note);
+          updates.push(`resolution_notes = $${params.length}`);
+        }
+
+        const updateRes = await client.query(
+          `UPDATE civic_cases SET ${updates.join(', ')} WHERE id = $2 RETURNING *`,
+          params
+        );
+
+        // Record event
+        await client.query(
+          `INSERT INTO case_events (
+            case_id, event_type, from_status, to_status, actor_user_id, note, metadata
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [
+            caseId,
+            eventType,
+            currentCase.status,
+            toStatus,
+            actorUserId,
+            note || null,
+            JSON.stringify(onHoldReason ? { on_hold_reason: onHoldReason } : {}),
+          ]
+        );
+
+        await client.query('COMMIT');
+        return updateRes.rows[0];
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
+    }
+
+    // Fallback in-memory
+    const c = fallbackCases.get(caseId);
+    if (!c) throw new Error('Case not found');
+
+    const fromStatus = c.status;
+    let eventType = 'CASE_ACKNOWLEDGED';
+    if (toStatus === 'ACKNOWLEDGED') eventType = 'CASE_ACKNOWLEDGED';
+    else if (toStatus === 'IN_PROGRESS') eventType = fromStatus === 'ON_HOLD' ? 'CASE_RESUMED' : 'CASE_STARTED';
+    else if (toStatus === 'ON_HOLD') eventType = 'CASE_ON_HOLD';
+    else if (toStatus === 'RESOLVED') eventType = 'CASE_RESOLVED';
+    else if (toStatus === 'CLOSED') eventType = 'CASE_CLOSED';
+
+    c.status = toStatus;
+    c.updated_at = now;
+
+    if (toStatus === 'ACKNOWLEDGED') {
+      c.acknowledged_at = now;
+    } else if (toStatus === 'IN_PROGRESS') {
+      c.started_at = c.started_at || now;
+    } else if (toStatus === 'ON_HOLD') {
+      c.on_hold_reason = onHoldReason;
+      c.on_hold_notes = onHoldNotes || note || null;
+    } else if (toStatus === 'RESOLVED') {
+      c.resolved_at = now;
+      c.resolved_by = actorUserId;
+      c.resolution_notes = note;
+    }
+
+    fallbackCaseEvents.push({
+      id: uuidv4(),
+      case_id: caseId,
+      event_type: eventType,
+      from_status: fromStatus,
+      to_status: toStatus,
+      actor_user_id: actorUserId,
+      note: note || null,
+      metadata: onHoldReason ? { on_hold_reason: onHoldReason } : {},
+      created_at: now,
+    });
+
+    return c;
+  },
+
+  async updateCaseAssignment(caseId, assignData) {
+    const { assignedToUserId, actorUserId, note } = assignData;
+    const now = new Date().toISOString();
+
+    if (isPostgresConnected && pool) {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const currRes = await client.query('SELECT * FROM civic_cases WHERE id = $1 FOR UPDATE', [caseId]);
+        if (currRes.rows.length === 0) throw new Error('Case not found');
+        const currCase = currRes.rows[0];
+
+        const prevAssignedTo = currCase.assigned_to;
+        const fromStatus = currCase.status;
+        const toStatus = currCase.status === 'UNASSIGNED' ? 'ASSIGNED' : currCase.status;
+        const eventType = prevAssignedTo ? 'CASE_REASSIGNED' : 'CASE_ASSIGNED';
+
+        const updateRes = await client.query(
+          `UPDATE civic_cases
+           SET assigned_to = $1, assigned_at = NOW(), status = $2, updated_at = NOW()
+           WHERE id = $3 RETURNING *`,
+          [assignedToUserId, toStatus, caseId]
+        );
+
+        await client.query(
+          `INSERT INTO case_events (
+            case_id, event_type, from_status, to_status, actor_user_id, note, metadata
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [
+            caseId,
+            eventType,
+            fromStatus,
+            toStatus,
+            actorUserId,
+            note || (prevAssignedTo ? 'Reassigned to another staff member' : 'Assigned to staff member'),
+            JSON.stringify({ previous_assigned_to: prevAssignedTo, new_assigned_to: assignedToUserId }),
+          ]
+        );
+
+        await client.query('COMMIT');
+        return updateRes.rows[0];
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
+    }
+
+    // Fallback in-memory
+    const c = fallbackCases.get(caseId);
+    if (!c) throw new Error('Case not found');
+
+    const prevAssignedTo = c.assigned_to;
+    const fromStatus = c.status;
+    const toStatus = c.status === 'UNASSIGNED' ? 'ASSIGNED' : c.status;
+    const eventType = prevAssignedTo ? 'CASE_REASSIGNED' : 'CASE_ASSIGNED';
+
+    c.assigned_to = assignedToUserId;
+    c.assigned_at = now;
+    c.status = toStatus;
+    c.updated_at = now;
+
+    fallbackCaseEvents.push({
+      id: uuidv4(),
+      case_id: caseId,
+      event_type: eventType,
+      from_status: fromStatus,
+      to_status: toStatus,
+      actor_user_id: actorUserId,
+      note: note || (prevAssignedTo ? 'Reassigned to another staff member' : 'Assigned to staff member'),
+      metadata: { previous_assigned_to: prevAssignedTo, new_assigned_to: assignedToUserId },
+      created_at: now,
+    });
+
+    return c;
+  },
+
+  async addCaseNote(caseId, noteData) {
+    const { actorUserId, note, isInternal = false } = noteData;
+    const now = new Date().toISOString();
+
+    if (isPostgresConnected && pool) {
+      const res = await pool.query(
+        `INSERT INTO case_events (
+          case_id, event_type, from_status, to_status, actor_user_id, note, metadata
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING *`,
+        [caseId, 'CASE_NOTE_ADDED', null, null, actorUserId, note, JSON.stringify({ is_internal: isInternal })]
+      );
+      return res.rows[0];
+    }
+
+    const event = {
+      id: uuidv4(),
+      case_id: caseId,
+      event_type: 'CASE_NOTE_ADDED',
+      from_status: null,
+      to_status: null,
+      actor_user_id: actorUserId,
+      note,
+      metadata: { is_internal: isInternal },
+      created_at: now,
+    };
+    fallbackCaseEvents.push(event);
+    return event;
+  },
+
+  async getCaseEventsByCaseId(caseId) {
+    if (isPostgresConnected && pool) {
+      const res = await pool.query(
+        `SELECT
+          e.*,
+          u.name AS actor_name,
+          u.email AS actor_email,
+          u.role AS actor_role
+        FROM case_events e
+        JOIN users u ON e.actor_user_id = u.id
+        WHERE e.case_id = $1
+        ORDER BY e.created_at ASC`,
+        [caseId]
+      );
+      return res.rows;
+    }
+
+    return fallbackCaseEvents
+      .filter((e) => e.case_id === caseId)
+      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+      .map((e) => {
+        const u = Array.from(fallbackUsers.values()).find((user) => user.id === e.actor_user_id);
+        return {
+          ...e,
+          actor_name: u?.name || 'System / Staff',
+          actor_email: u?.email || null,
+          actor_role: u?.role || 'STAFF',
+        };
+      });
   },
 };
 

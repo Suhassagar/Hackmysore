@@ -8,7 +8,7 @@ Citizens should be able to report civic problems across Mysuru without needing t
 
 ---
 
-## Current Status: Phase 6 Completed
+## Current Status: Phase 7 Completed
  
  - [x] **Phase 0 — Project Foundation**: Express backend, PostgreSQL database, React + Vite frontend, design system.
  - [x] **Phase 1 — Authentication + Role-Based Access Control (RBAC)**: Strict role separation (`CITIZEN`, `STAFF`, `ADMIN`), secure JWT/Firebase tokens, IDOR protections, 19/19 automated tests passed.
@@ -17,34 +17,52 @@ Citizens should be able to report civic problems across Mysuru without needing t
  - [x] **Phase 4 — Geospatial + Dynamic Jurisdiction Engine**: PostGIS spatial queries (`ST_Covers`, SRID 4326), temporal boundary versioning (`valid_from`, `valid_until`), deterministic 3-case resolution (`MATCHED`, `NO_JURISDICTION_MATCH`, `JURISDICTION_CONFLICT`), immutable `report_jurisdiction` historical snapshots, 15/15 automated tests passed.
  - [x] **Phase 5 — Dynamic Civic Responsibility Rule Engine**: Data-driven versioned rules (`authorities`, `departments`, `responsibility_rules`), deterministic 3-case resolution (`ROUTED`, `NO_RESPONSIBLE_RULE`, `RESPONSIBILITY_CONFLICT`) + AI uncertainty handling (`NEEDS_REVIEW`), immutable `report_routing` historical snapshots with auditable explainability trace, 47/47 automated tests passed.
  - [x] **Phase 6 — Routing Confidence & Human Review System**: Deterministic routing confidence evaluation (`RoutingAssessmentService`), state model (`AUTO_ROUTED`, `NEEDS_REVIEW`, `REVIEWED`, `ROUTING_FAILED`), structured review reasons, human review adjudication API with idempotency & audit preservation (`routing_reviews`), Staff Review Queue & Adjudication modal, 40/40 automated tests passed.
+ - [x] **Phase 7 — Staff Case Workflow + Follow-Through**: Operational case lifecycle (`civic_cases`), human-friendly case numbers (`CIV-YYYY-XXXXXX`), backend-enforced state transitions (`UNASSIGNED` $\rightarrow$ `ASSIGNED` $\rightarrow$ `ACKNOWLEDGED` $\rightarrow$ `IN_PROGRESS` $\rightarrow$ `RESOLVED`), immutable audit events (`case_events`), department-scoped staff assignment, operational notes, Staff Dashboard & Case Detail workspace, Citizen 5-stage stepper & timeline, 54/54 automated tests passed (220/220 across all phases).
 
 ---
 
-## Architecture & Pipeline
+## Architecture & Operational Lifecycle
 
 ```text
-       AI Analysis
-            |
-            v
-       Jurisdiction
-            |
-            v
-   Responsibility Rule
-            |
-            v
-   Routing Assessment
+    Citizen Report
+         |
+         v
+    AI Issue Understanding (Gemini)
+         |
+         v
+    Jurisdiction (PostGIS ST_Covers)
+         |
+         v
+    Responsibility Rule Engine
+         |
+         v
+    Routing Assessment
       /          \
      /            \
-AUTO-ROUTED    NEEDS-REVIEW
-                    |
-                    v
-              Human Review
-               /       \
-              /         \
-         Approve       Override
-              \         /
-               \       /
-                Final Route
+AUTO_ROUTED    NEEDS_REVIEW
+     |              |
+     |              v
+     |        Human Review (Approve / Override)
+     |              |
+     +-------+------+
+             |
+             v
+        Operational Case Created (CIV-2026-XXXXXX)
+             |
+             v
+          ASSIGNED
+             |
+             v
+       ACKNOWLEDGED
+             |
+             v
+        IN_PROGRESS <---> ON_HOLD (structured reason)
+             |
+             v
+         RESOLVED (staff claim - pending Phase 8 verification)
+             |
+             v
+          [CLOSED]
 ```
 
 ---
@@ -80,7 +98,9 @@ node src/scripts/verify_phase2.js   # 20/20 PASS
 node src/scripts/verify_phase3.js   # 25/25 PASS
 node src/scripts/verify_phase4.js   # 15/15 PASS
 node src/scripts/verify_phase5.js   # 47/47 PASS
-node src/scripts/verify_phase6.js   # 40/40 PASS (13 Section Tests)
+node src/scripts/verify_phase6.js   # 40/40 PASS
+node src/scripts/verify_phase7.js   # 54/54 PASS (All 18 Section 26 Requirements)
+node src/scripts/demo_phase7.js     # 12-step complete demo scenario PASS
 ```
 
 ---
@@ -89,3 +109,4 @@ node src/scripts/verify_phase6.js   # 40/40 PASS (13 Section Tests)
 - [Architecture Specification](file:///d:/HackMysuru/docs/architecture.md)
 - [Setup & Running Guide](file:///d:/HackMysuru/docs/setup.md)
 - [System Limitations & Phase Boundaries](file:///d:/HackMysuru/docs/limitations.md)
+

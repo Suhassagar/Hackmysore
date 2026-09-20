@@ -290,8 +290,8 @@ router.get('/:id', requireAuth, async (req, res) => {
       });
     }
 
-    // IDOR Protection: verify ownership unless ADMIN
-    if (report.reporter_user_id !== req.user.id && req.user.role !== 'ADMIN') {
+    // IDOR Protection: verify ownership unless ADMIN or STAFF
+    if (report.reporter_user_id !== req.user.id && req.user.role !== 'ADMIN' && req.user.role !== 'STAFF') {
       return res.status(403).json({
         error: 'Forbidden',
         message: 'Access denied. You do not have authorization to view this citizen report.',
@@ -318,6 +318,14 @@ router.get('/:id', requireAuth, async (req, res) => {
       }
     }
 
+    // Retrieve operational civic case if available (Phase 7)
+    let caseItem = null;
+    try {
+      caseItem = await db.getCaseByReportId(id);
+    } catch (cErr) {
+      console.warn(`[Case] Could not fetch case for Report ${id}:`, cErr.message);
+    }
+
     res.json({
       id: report.id,
       category: report.category,
@@ -333,6 +341,7 @@ router.get('/:id', requireAuth, async (req, res) => {
       reportedAt: report.reported_at,
       jurisdiction: jurisdictionSnapshot,
       routing: routingSnapshot,
+      case: caseItem,
     });
   } catch (err) {
     res.status(500).json({
@@ -822,11 +831,31 @@ router.post('/:id/routing-review', requireAuth, requireRole('STAFF', 'ADMIN'), a
       finalDepartmentId: finalDeptId,
     });
 
+    // 7. Phase 7: Automatically create operational case after human routing decision
+    let createdCase = null;
+    try {
+      const caseService = require('../services/caseService');
+      createdCase = await caseService.createCaseForReport(id, {
+        ...updatedRouting,
+        final_authority_id: finalAuthId,
+        final_department_id: finalDeptId,
+        authority_id: finalAuthId,
+        department_id: finalDeptId,
+        decision_source: 'HUMAN_REVIEW',
+      }, {
+        actor_user_id: reviewerUserId,
+        note: `Case created following human review ${action.toLowerCase()}.`,
+      });
+    } catch (cErr) {
+      console.warn(`[CaseService] Failed to create case after review for Report ${id}:`, cErr.message);
+    }
+
     res.status(200).json({
       message: `Routing successfully ${action === 'APPROVE' ? 'approved' : 'overridden'} by reviewer.`,
       action,
       review: reviewRecord,
       routing: updatedRouting,
+      case: createdCase,
     });
   } catch (err) {
     console.error('[Routing Review Error]', err);
@@ -871,6 +900,74 @@ router.get('/:id/routing-reviews', requireAuth, async (req, res) => {
     res.status(500).json({
       error: 'Internal Server Error',
       message: err.message || 'Failed to fetch review history.',
+    });
+  }
+});
+
+/**
+ * GET /api/reports/:id/case
+ * Citizen & Staff endpoint to retrieve the operational case and citizen-safe timeline.
+ */
+router.get('/:id/case', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const report = await db.getReportById(id);
+    if (!report) {
+      return res.status(404).json({
+        error: 'Not Found',
+        message: `Report with ID '${id}' was not found.`,
+      });
+    }
+
+    const isOwner = report.reporter_user_id === req.user.id;
+    const isPrivileged = ['STAFF', 'ADMIN'].includes(req.user.role);
+    if (!isOwner && !isPrivileged) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Access denied. You do not have authorization to view this report case.',
+      });
+    }
+
+    const caseService = require('../services/caseService');
+    const caseItem = await caseService.getCaseByReportId(id, req.user);
+    if (!caseItem) {
+      return res.status(404).json({
+        error: 'Not Found',
+        message: 'No operational case has been created for this report yet.',
+      });
+    }
+
+    const timeline = await caseService.getCaseTimeline(caseItem.id, req.user);
+
+    res.json({
+      case: {
+        id: caseItem.id,
+        report_id: caseItem.report_id,
+        case_number: caseItem.case_number,
+        status: caseItem.status,
+        priority: caseItem.priority,
+        authority_id: caseItem.authority_id,
+        authority_name: caseItem.authority_name,
+        authority_code: caseItem.authority_code,
+        department_id: caseItem.department_id,
+        department_name: caseItem.department_name,
+        department_code: caseItem.department_code,
+        jurisdiction_id: caseItem.jurisdiction_id,
+        jurisdiction_name: caseItem.jurisdiction_name,
+        assigned_to_name: isPrivileged ? caseItem.assigned_to_name : undefined,
+        assigned_at: caseItem.assigned_at,
+        acknowledged_at: caseItem.acknowledged_at,
+        started_at: caseItem.started_at,
+        resolved_at: caseItem.resolved_at,
+        resolution_notes: caseItem.resolution_notes,
+        created_at: caseItem.created_at,
+      },
+      timeline,
+    });
+  } catch (err) {
+    res.status(err.status || 500).json({
+      error: err.status === 403 ? 'Forbidden' : 'Internal Server Error',
+      message: err.message,
     });
   }
 });

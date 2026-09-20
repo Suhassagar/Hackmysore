@@ -101,9 +101,9 @@
       "departmentCode": "MCC_ROADS",
       "version": "2026-V1",
       "validFrom": "2026-01-01T00:00:00Z",
-      "validUntil": "2026-09-20T00:00:00Z",
+      "validUntil": "2026-09-20T23:59:59Z",
       "priority": 100,
-      "description": "Ward 42 Pothole Maintenance under MCC Roads (Valid until 2026-09-20 transition)"
+      "description": "Ward 42 Pothole Maintenance under MCC Roads (Valid until 2026-09-20 end of day transition)"
     },
     {
       "jurisdictionCode": "MCC_WARD_42",
@@ -111,10 +111,10 @@
       "authorityCode": "SPECIAL_INFRA_AUTHORITY",
       "departmentCode": "SIA_RAPID_ROADS",
       "version": "2026-V2",
-      "validFrom": "2026-09-20T00:00:00Z",
+      "validFrom": "2026-09-21T00:00:00Z",
       "validUntil": null,
       "priority": 100,
-      "description": "Ward 42 Pothole Maintenance transitioned to Special Urban Infrastructure Authority (Valid from 2026-09-20 onwards)"
+      "description": "Ward 42 Pothole Maintenance transitioned to Special Urban Infrastructure Authority (Valid from 2026-09-21 onwards)"
     },
     {
       "jurisdictionCode": "MCC_WARD_42",

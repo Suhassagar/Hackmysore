@@ -52,20 +52,35 @@ This document outlines intentional architectural boundaries, current prototype l
 
 ---
 
-## 5. Deferred Capabilities (Non-Goals for Phase 6)
+---
 
-The following modules belong to future phases and are intentionally deferred:
+## 5. Staff Case Workflow & Lifecycle Boundaries (Phase 7)
 
-1. **Staff Resolution Workflows & Task Completion (Phase 7+)**:
-   Field worker progress tracking, repair status updates, and case closure.
-2. **SLA Management & Escalation Timers**:
-   Resolution countdowns and administrative escalation triggers.
+- **RESOLVED Is NOT Equivalent to VERIFIED**:
+  Marking a case `RESOLVED` in Phase 7 indicates strictly that an authorized staff member *claims* the physical work is complete. The system intentionally does **NOT** mark the case `CLOSED` automatically, nor does it guarantee physical remediation. Independent resolution verification (multimodal image verification, GPS match at site, and citizen dispute periods) is explicitly deferred to Phase 8.
+- **Controlled State Machine**:
+  State transitions are strictly linear and server-enforced (`UNASSIGNED ──► ASSIGNED ──► ACKNOWLEDGED ──► IN_PROGRESS ──► RESOLVED ──► CLOSED`). Direct shortcuts (e.g., `ASSIGNED ──► RESOLVED` or `RESOLVED ──► IN_PROGRESS`) are rejected. Resuming work after an `ON_HOLD` pause requires structured validation.
+- **Audit Immutability**:
+  All operational actions write an append-only event into `case_events`. Events can never be modified or deleted by users or staff. Corrections require appending new audit events.
+- **Lean Organizational Scoping**:
+  Staff-to-department membership is modeled cleanly via `authority_id` and `department_id` on user records without bloating into a complex enterprise hierarchy management system.
+
+---
+
+## 6. Deferred Capabilities (Non-Goals for Phase 7)
+
+The following capabilities belong to upcoming phases and are intentionally deferred:
+
+1. **Resolution Verification & Citizen Disputes (Phase 8)**:
+   Post-repair photographic proof-of-work verification using Gemini, geotagged proof comparison, citizen confirmation, and dispute arbitration.
+2. **Automated SLA Management & Escalation Timers**:
+   Turnaround countdown timers, overdue alerts, and hierarchical administrative escalation.
 3. **Duplicate Detection & Incident Clustering**:
-   Aggregating multiple citizen reports into a single unified Civic Case.
-4. **Offline Support & SMS Fallback**:
-   Low-connectivity citizen reporting queues.
-5. **Resolution Verification & Proof**:
-   After-repair photographic verification and citizen dispute arbitration.
-6. **Analytics & Performance Dashboards**:
-   Cross-ward response time analytics and SLA compliance heatmaps.
+   Spatial and semantic grouping of multiple citizen submissions into a single consolidated operational case.
+4. **Notifications & Multi-Channel Alerts**:
+   Email, WhatsApp, or SMS updates sent to citizens and field staff upon status changes.
+5. **Offline Support & Mobile Sync**:
+   Field worker offline caching and sync for intermittent rural connectivity.
+6. **Analytics Dashboards & Performance Heatmaps**:
+   Authority-wide SLA metrics, ward-level resolution times, and departmental responsiveness rankings.
 

@@ -21,6 +21,9 @@ import {
   Check,
   Edit3,
   History,
+  Briefcase,
+  PauseCircle,
+  PlayCircle,
 } from 'lucide-react';
 
 export const ReportDetail = () => {
@@ -31,6 +34,8 @@ export const ReportDetail = () => {
   const [jurisdiction, setJurisdiction] = useState(null);
   const [routing, setRouting] = useState(null);
   const [reviewsHistory, setReviewsHistory] = useState([]);
+  const [civicCase, setCivicCase] = useState(null);
+  const [caseTimeline, setCaseTimeline] = useState([]);
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
   const [resolvingJur, setResolvingJur] = useState(false);
@@ -115,6 +120,17 @@ export const ReportDetail = () => {
           ]);
           if (authRes.ok && authRes.data?.authorities) setAuthorities(authRes.data.authorities);
           if (deptRes.ok && deptRes.data?.departments) setDepartments(deptRes.data.departments);
+        }
+
+        // 7. Fetch Phase 7 Operational Case & Timeline
+        try {
+          const caseRes = await api.getReportCase(id, token);
+          if (caseRes.ok && caseRes.data?.case) {
+            setCivicCase(caseRes.data.case);
+            setCaseTimeline(caseRes.data.timeline || []);
+          }
+        } catch (cErr) {
+          console.warn('[ReportDetail] Could not load case for report:', cErr.message);
         }
       } catch (err) {
         setError(err.message || 'Network error.');
@@ -288,41 +304,259 @@ export const ReportDetail = () => {
           </Link>
         </div>
 
-        {/* Status Announcement Banner */}
+        {/* ========================================================================= */}
+        {/* PHASE 7: OPERATIONAL CIVIC CASE TRACKING & 5-STAGE CITIZEN JOURNEY        */}
+        {/* ========================================================================= */}
         <div
+          className="card"
+          id="phase7-case-tracking-card"
           style={{
-            background: 'linear-gradient(90deg, rgba(37, 99, 235, 0.15) 0%, rgba(16, 185, 129, 0.15) 100%)',
-            border: '1px solid var(--border-subtle)',
-            borderRadius: 'var(--radius-lg)',
-            padding: '1.5rem',
             marginBottom: '1.5rem',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '1rem',
+            border: '1px solid #3b82f6',
+            background: 'linear-gradient(180deg, #0d1a33 0%, #0a1122 100%)',
+            padding: '1.5rem',
+            borderRadius: 'var(--radius-lg)',
           }}
         >
-          <div
-            style={{
-              width: '44px',
-              height: '44px',
-              borderRadius: '50%',
-              background: 'rgba(16, 185, 129, 0.2)',
-              color: 'var(--status-200)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-            }}
-          >
-            <CheckCircle2 size={24} />
+          {/* Card Top: Case Identifier & Responsible Department */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <div
+                style={{
+                  width: '42px',
+                  height: '42px',
+                  borderRadius: '10px',
+                  background: 'rgba(59, 130, 246, 0.2)',
+                  color: '#60a5fa',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <Briefcase size={22} />
+              </div>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  <h3 style={{ fontSize: '1.25rem', color: '#fff', margin: 0, fontFamily: 'monospace', fontWeight: 700 }}>
+                    {civicCase ? civicCase.case_number : 'CIVIC CASE PENDING'}
+                  </h3>
+                  {civicCase && (
+                    <span
+                      style={{
+                        fontSize: '0.72rem',
+                        fontWeight: 700,
+                        padding: '0.2rem 0.6rem',
+                        borderRadius: '9999px',
+                        textTransform: 'uppercase',
+                        background:
+                          civicCase.status === 'RESOLVED'
+                            ? 'rgba(16, 185, 129, 0.2)'
+                            : civicCase.status === 'IN_PROGRESS'
+                            ? 'rgba(245, 158, 11, 0.2)'
+                            : civicCase.status === 'ON_HOLD'
+                            ? 'rgba(168, 85, 247, 0.2)'
+                            : civicCase.status === 'ACKNOWLEDGED'
+                            ? 'rgba(99, 102, 241, 0.2)'
+                            : civicCase.status === 'ASSIGNED'
+                            ? 'rgba(59, 130, 246, 0.2)'
+                            : 'rgba(148, 163, 184, 0.2)',
+                        color:
+                          civicCase.status === 'RESOLVED'
+                            ? '#6ee7b7'
+                            : civicCase.status === 'IN_PROGRESS'
+                            ? '#fcd34d'
+                            : civicCase.status === 'ON_HOLD'
+                            ? '#d8b4fe'
+                            : civicCase.status === 'ACKNOWLEDGED'
+                            ? '#a5b4fc'
+                            : civicCase.status === 'ASSIGNED'
+                            ? '#93c5fd'
+                            : '#cbd5e1',
+                        border: `1px solid ${
+                          civicCase.status === 'RESOLVED'
+                            ? '#10b981'
+                            : civicCase.status === 'IN_PROGRESS'
+                            ? '#f59e0b'
+                            : civicCase.status === 'ON_HOLD'
+                            ? '#a855f7'
+                            : '#3b82f6'
+                        }`,
+                      }}
+                    >
+                      {civicCase.status}
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontSize: '0.8rem', color: '#93c5fd', marginTop: '0.2rem' }}>
+                  {civicCase ? (
+                    <>
+                      Responsible: <strong>{civicCase.authority_code} • {civicCase.department_name || civicCase.department_code}</strong>
+                    </>
+                  ) : routing?.assessment?.status === 'NEEDS_REVIEW' ? (
+                    <span style={{ color: '#fcd34d' }}>Routing under human review • Operational case pending adjudication</span>
+                  ) : (
+                    <span>Evaluating civic jurisdiction & routing snapshot...</span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {(role === 'STAFF' || role === 'ADMIN') && civicCase && (
+              <Link
+                to={`/staff/cases/${civicCase.id}`}
+                className="btn btn-primary btn-sm"
+                style={{ fontSize: '0.78rem', padding: '0.35rem 0.75rem' }}
+              >
+                Staff Case Workspace →
+              </Link>
+            )}
           </div>
-          <div>
-            <h3 style={{ fontSize: '1.15rem', marginBottom: '0.2rem' }}>Your report has been received</h3>
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-              Status: <strong>{report.status}</strong>. Dynamic civic routing to the responsible municipal or panchayat
-              authority will be evaluated in subsequent platform phases.
-            </p>
+
+          {/* 5-Stage Citizen Journey Stepper */}
+          <div style={{ background: 'rgba(0, 0, 0, 0.3)', padding: '1.25rem', borderRadius: 'var(--radius-md)', border: '1px solid rgba(255, 255, 255, 0.07)', marginBottom: '1.25rem' }}>
+            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '1rem' }}>
+              Operational Civic Journey
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.75rem' }}>
+              {/* Stage 1: Report Received */}
+              <div style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(16, 185, 129, 0.12)', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: '#6ee7b7', fontSize: '0.8rem', fontWeight: 600 }}>
+                  <Check size={14} /> Report Received
+                </div>
+                <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '0.2rem' }}>
+                  {new Date(report.reportedAt || report.created_at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </div>
+              </div>
+
+              {/* Stage 2: Routed */}
+              {(() => {
+                const isRouted = Boolean(civicCase || routing?.routing_status === 'ROUTED' || routing?.assessment?.status === 'AUTO_ROUTED' || routing?.decision_source === 'HUMAN_REVIEW');
+                const isReview = routing?.assessment?.status === 'NEEDS_REVIEW' && !civicCase;
+                return (
+                  <div
+                    style={{
+                      padding: '0.75rem',
+                      borderRadius: '8px',
+                      background: isRouted ? 'rgba(16, 185, 129, 0.12)' : isReview ? 'rgba(245, 158, 11, 0.12)' : 'rgba(255, 255, 255, 0.04)',
+                      border: `1px solid ${isRouted ? 'rgba(16, 185, 129, 0.3)' : isReview ? 'rgba(245, 158, 11, 0.3)' : 'rgba(255, 255, 255, 0.08)'}`,
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: isRouted ? '#6ee7b7' : isReview ? '#fcd34d' : '#94a3b8', fontSize: '0.8rem', fontWeight: 600 }}>
+                      {isRouted ? <Check size={14} /> : isReview ? <AlertTriangle size={14} /> : '○'} {isReview ? 'Routing Review' : 'Department Routed'}
+                    </div>
+                    <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '0.2rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {civicCase ? civicCase.department_code : isReview ? 'Requires review' : 'Evaluating route...'}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Stage 3: Staff Acknowledged */}
+              {(() => {
+                const isAck = Boolean(civicCase?.acknowledged_at || ['ACKNOWLEDGED', 'IN_PROGRESS', 'ON_HOLD', 'RESOLVED', 'CLOSED'].includes(civicCase?.status));
+                const isAssigned = civicCase?.status === 'ASSIGNED';
+                return (
+                  <div
+                    style={{
+                      padding: '0.75rem',
+                      borderRadius: '8px',
+                      background: isAck ? 'rgba(16, 185, 129, 0.12)' : isAssigned ? 'rgba(59, 130, 246, 0.12)' : 'rgba(255, 255, 255, 0.04)',
+                      border: `1px solid ${isAck ? 'rgba(16, 185, 129, 0.3)' : isAssigned ? 'rgba(59, 130, 246, 0.3)' : 'rgba(255, 255, 255, 0.08)'}`,
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: isAck ? '#6ee7b7' : isAssigned ? '#93c5fd' : '#94a3b8', fontSize: '0.8rem', fontWeight: 600 }}>
+                      {isAck ? <Check size={14} /> : isAssigned ? '●' : '○'} Staff Acknowledged
+                    </div>
+                    <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '0.2rem' }}>
+                      {isAck ? 'Acknowledged' : isAssigned ? 'Staff assigned' : 'Awaiting assignment'}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Stage 4: Work In Progress */}
+              {(() => {
+                const isResolved = ['RESOLVED', 'CLOSED'].includes(civicCase?.status);
+                const isInProgress = civicCase?.status === 'IN_PROGRESS';
+                const isOnHold = civicCase?.status === 'ON_HOLD';
+                return (
+                  <div
+                    style={{
+                      padding: '0.75rem',
+                      borderRadius: '8px',
+                      background: isResolved ? 'rgba(16, 185, 129, 0.12)' : isInProgress ? 'rgba(245, 158, 11, 0.15)' : isOnHold ? 'rgba(168, 85, 247, 0.15)' : 'rgba(255, 255, 255, 0.04)',
+                      border: `1px solid ${isResolved ? 'rgba(16, 185, 129, 0.3)' : isInProgress ? 'rgba(245, 158, 11, 0.4)' : isOnHold ? 'rgba(168, 85, 247, 0.4)' : 'rgba(255, 255, 255, 0.08)'}`,
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: isResolved ? '#6ee7b7' : isInProgress ? '#fcd34d' : isOnHold ? '#d8b4fe' : '#94a3b8', fontSize: '0.8rem', fontWeight: 600 }}>
+                      {isResolved ? <Check size={14} /> : isInProgress ? '●' : isOnHold ? <PauseCircle size={14} /> : '○'} Work Status
+                    </div>
+                    <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '0.2rem' }}>
+                      {isResolved ? 'Work completed' : isInProgress ? 'Active on site' : isOnHold ? `Paused: ${civicCase.on_hold_reason || 'Pending'}` : 'Pending start'}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Stage 5: Resolution */}
+              {(() => {
+                const isResolved = ['RESOLVED', 'CLOSED'].includes(civicCase?.status);
+                return (
+                  <div
+                    style={{
+                      padding: '0.75rem',
+                      borderRadius: '8px',
+                      background: isResolved ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 255, 255, 0.04)',
+                      border: `1px solid ${isResolved ? 'rgba(16, 185, 129, 0.4)' : 'rgba(255, 255, 255, 0.08)'}`,
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: isResolved ? '#6ee7b7' : '#94a3b8', fontSize: '0.8rem', fontWeight: 600 }}>
+                      {isResolved ? <Check size={14} /> : '○'} Resolution
+                    </div>
+                    <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '0.2rem' }}>
+                      {isResolved ? 'Claimed by staff' : 'Resolution pending'}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
           </div>
+
+          {/* Citizen-Safe Operational Activity Timeline */}
+          {caseTimeline.length > 0 && (
+            <div>
+              <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#93c5fd', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.75rem' }}>
+                Operational Activity Timeline
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                {caseTimeline.map((ev, i) => (
+                  <div
+                    key={ev.id || i}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'baseline',
+                      gap: '0.75rem',
+                      fontSize: '0.82rem',
+                      color: 'var(--text-secondary)',
+                      padding: '0.4rem 0.6rem',
+                      borderRadius: '6px',
+                      background: 'rgba(255, 255, 255, 0.02)',
+                    }}
+                  >
+                    <span style={{ fontFamily: 'monospace', color: '#64748b', fontSize: '0.75rem', flexShrink: 0 }}>
+                      {new Date(ev.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                    <span style={{ fontWeight: 600, color: '#e2e8f0' }}>
+                      {ev.event_type.replace(/_/g, ' ')}
+                    </span>
+                    {ev.note && <span style={{ color: '#94a3b8' }}>— {ev.note}</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ========================================================================= */}

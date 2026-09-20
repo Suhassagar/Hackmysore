@@ -170,5 +170,58 @@ export const api = {
       method: 'GET',
       token,
     }),
+
+  // Phase 7 Staff Case Workflow + Follow-Through
+  getReportCase: (id, token) =>
+    apiRequest(`/reports/${id}/case`, {
+      method: 'GET',
+      token,
+    }),
+
+  getStaffCases: (token, { page = 1, limit = 20, view = 'active', status, authorityId, departmentId, assignedTo, search } = {}) => {
+    const params = new URLSearchParams({ page, limit, view });
+    if (status) params.append('status', status);
+    if (authorityId) params.append('authorityId', authorityId);
+    if (departmentId) params.append('departmentId', departmentId);
+    if (assignedTo) params.append('assignedTo', assignedTo);
+    if (search) params.append('search', search);
+    return apiRequest(`/staff/cases?${params.toString()}`, {
+      method: 'GET',
+      token,
+    });
+  },
+
+  getCaseById: (id, token) =>
+    apiRequest(`/staff/cases/${id}`, {
+      method: 'GET',
+      token,
+    }),
+
+  updateCaseStatus: (id, payload, token) =>
+    apiRequest(`/staff/cases/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+      token,
+    }),
+
+  assignCase: (id, payload, token) =>
+    apiRequest(`/staff/cases/${id}/assignment`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+      token,
+    }),
+
+  addCaseNote: (id, payload, token) =>
+    apiRequest(`/staff/cases/${id}/notes`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      token,
+    }),
+
+  getStaffUsers: (token) =>
+    apiRequest('/staff/users', {
+      method: 'GET',
+      token,
+    }),
 };
 

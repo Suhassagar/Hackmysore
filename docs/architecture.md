@@ -401,3 +401,98 @@ If **any** hard review condition is triggered (`JURISDICTION_CONFLICT`, `NO_JURI
 - `STAFF` & `ADMIN`: Authorized to view the review queue and perform route adjudications.
 - **Reviewer Identity**: Derived strictly from verified backend JWT session (`req.user.id`). Client-supplied reviewer IDs are rejected.
 
+---
+
+## 5. Phase 7: Staff Case Workflow & Accountability Lifecycle
+
+### Core Architectural Principle
+> **ROUTING IS NOT THE END.**
+> A civic issue must transition from:
+> `routed ──► acknowledged ──► in progress ──► resolved`
+> Every important state transition must be auditable, immutable, and accountable.
+
+```mermaid
+graph TD
+    REPORT["REPORT (Citizen Submission)"] --> ROUTED["ROUTED (Auto or Human Review)"]
+    ROUTED --> CASE_CREATED["CASE CREATED (CIV-YYYY-XXXXXX)"]
+    CASE_CREATED --> UNASSIGNED["UNASSIGNED"]
+    UNASSIGNED --> ASSIGNED["ASSIGNED"]
+    ASSIGNED --> ACKNOWLEDGED["ACKNOWLEDGED"]
+    ACKNOWLEDGED --> IN_PROGRESS["IN_PROGRESS"]
+    IN_PROGRESS --> ON_HOLD["ON_HOLD (Structured Reason)"]
+    ON_HOLD --> IN_PROGRESS
+    IN_PROGRESS --> RESOLVED["RESOLVED (Staff Fix Claim)"]
+    RESOLVED --> FUTURE["[Future Phase 8: Resolution Verification]"]
+    FUTURE --> CLOSED["CLOSED"]
+```
+
+### 1. Report vs. Case Separation
+- **REPORT (`reports` table)**: The citizen's immutable submission containing citizen descriptions, media attachments, raw GPS coordinates, and user identity.
+- **CASE (`civic_cases` table)**: The operational civic-work item created from the report after routing. It manages operational workflow, department routing, staff ownership, execution timestamps, and lifecycle transitions (1:1 relationship with `reports`).
+
+### 2. Human-Friendly Case Identifier
+Case numbers follow the standard format:
+`CIV-YYYY-XXXXXX` (e.g., `CIV-2026-010001`)
+Sequential database IDs are never exposed as the primary operational case reference.
+
+### 3. Case Lifecycle & Controlled State Transitions
+Civic cases follow a strict backend-enforced state machine:
+
+| From Status | Allowed To Status | Preconditions / Requirements |
+| :--- | :--- | :--- |
+| `UNASSIGNED` | `ASSIGNED` | Staff user assigned from authorized authority/department |
+| `ASSIGNED` | `ACKNOWLEDGED` | Assigned staff member confirms receipt |
+| `ASSIGNED` | `ASSIGNED` | Reassignment to another staff member (logged in audit trail) |
+| `ACKNOWLEDGED` | `IN_PROGRESS` | Work execution commenced (`started_at` recorded) |
+| `ACKNOWLEDGED` | `ASSIGNED` | Reassignment if needed |
+| `IN_PROGRESS` | `ON_HOLD` | Mandatory structured reason (`WAITING_FOR_MATERIAL`, `WEATHER`, `ACCESS_BLOCKED`, `REQUIRES_EXTERNAL_TEAM`, `OTHER`) |
+| `IN_PROGRESS` | `RESOLVED` | Mandatory resolution note detailing the fix performed |
+| `ON_HOLD` | `IN_PROGRESS` | Resumption of active maintenance |
+| `RESOLVED` | `CLOSED` | Operational workflow completed (pending Phase 8 verification) |
+
+**Prohibited Transitions (Server-Enforced):**
+- `ASSIGNED ──► RESOLVED`: Strict 400 Bad Request (work must be acknowledged and started).
+- `RESOLVED ──► IN_PROGRESS`: Strict 400 Bad Request (re-opening requires formal review).
+- `UNASSIGNED ──► RESOLVED`: Strict 400 Bad Request.
+
+### 4. Why RESOLVED is NOT Equivalent to VERIFIED
+In Phase 7:
+> **RESOLVED means "Staff claims the work is complete."**
+> It does **NOT** mean the system or citizen has independently verified the fix.
+Independent AI image verification, sensor telemetry, and citizen dispute confirmation will be implemented in Phase 8. The system does not automatically set `CLOSED` or claim absolute physical resolution.
+
+### 5. Immutable Case Event Audit Trail (`case_events`)
+Every operational transition creates an append-only event record:
+- `id`: UUIDv4
+- `case_id`: Reference to `civic_cases.id`
+- `event_type`: `CASE_CREATED`, `CASE_ASSIGNED`, `CASE_REASSIGNED`, `CASE_ACKNOWLEDGED`, `CASE_STARTED`, `CASE_ON_HOLD`, `CASE_RESUMED`, `CASE_NOTE_ADDED`, `CASE_RESOLVED`, `CASE_CLOSED`
+- `from_status`, `to_status`: Lifecycle state deltas
+- `actor_user_id`: Server-derived ID of acting staff/admin
+- `note`: Operational note or resolution explanation
+- `metadata`: Structured payloads (e.g., hold reasons, assignment changes, citizen visibility)
+- `created_at`: Server-assigned UTC timestamp
+
+History is **never** mutated or deleted. Corrections create new chronological events.
+
+### 6. Staff Authorization & Department Scoping
+- Only users with `role: 'STAFF'` or `'ADMIN'` can access staff queues or execute case state transitions.
+- A staff member's department and authority membership (`authority_id`, `department_id`) are checked against the case's assigned operating unit. Cross-department actions (e.g., a drainage officer attempting to reassign or resolve a road case) are blocked with `403 Forbidden`.
+- Identity and permissions are derived strictly server-side from authenticated sessions.
+
+### 7. Citizen Visibility & Transparency
+Citizens can view their report's operational journey via `GET /api/reports/:id/case`:
+- Displays a 5-stage progress indicator:
+  `Report Received ──► Routed to Department ──► Staff Acknowledged ──► Work In Progress ──► Resolved`
+- Sanitized timeline shows operational progress without leaking internal administrative metadata or private internal staff notes (`metadata.is_internal = true`).
+- Citizens have read-only access (403 Forbidden on write operations).
+
+### 8. Case Creation: Auto-Routing & Human Review Flow
+- **AUTO_ROUTED**: Automatically triggers idempotent operational case creation (`createCaseForReport`).
+- **NEEDS_REVIEW**: No operational case is assigned while under review. When staff approves or overrides the route (`POST /api/reports/:id/routing-review`), an operational case is atomically generated in `UNASSIGNED` state.
+- **Idempotency**: Unique constraint on `report_id` prevents duplicate cases on retries.
+
+### 9. Transaction & Concurrency Safety
+- Status updates and event logging execute within transactional boundaries (`BEGIN ... COMMIT / ROLLBACK`).
+- If event persistence fails, status changes are rolled back to prevent inconsistent states.
+- Duplicate status requests (e.g., double-clicking buttons) are handled idempotently without emitting redundant events.
+

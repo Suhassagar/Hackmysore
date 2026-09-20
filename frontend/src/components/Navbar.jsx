@@ -2,7 +2,7 @@ import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { RoleBadge } from './RoleBadge';
-import { LogOut, Activity, PlusCircle, List, LayoutDashboard, ShieldAlert } from 'lucide-react';
+import { LogOut, Activity, PlusCircle, List, LayoutDashboard, ShieldAlert, Briefcase } from 'lucide-react';
 
 export const Navbar = () => {
   const { user, role, logout, isAuthenticated } = useAuth();
@@ -55,14 +55,24 @@ export const Navbar = () => {
               )}
 
               {(role === 'STAFF' || role === 'ADMIN') && (
-                <Link
-                  to="/staff/routing-review"
-                  className={`btn btn-sm ${location.pathname === '/staff/routing-review' ? 'btn-primary' : 'btn-outline'}`}
-                  id="nav-link-review-queue"
-                >
-                  <ShieldAlert size={14} />
-                  Review Queue
-                </Link>
+                <>
+                  <Link
+                    to="/staff/cases"
+                    className={`btn btn-sm ${location.pathname.startsWith('/staff/cases') ? 'btn-primary' : 'btn-outline'}`}
+                    id="nav-link-staff-cases"
+                  >
+                    <Briefcase size={14} />
+                    Cases
+                  </Link>
+                  <Link
+                    to="/staff/routing-review"
+                    className={`btn btn-sm ${location.pathname === '/staff/routing-review' ? 'btn-primary' : 'btn-outline'}`}
+                    id="nav-link-review-queue"
+                  >
+                    <ShieldAlert size={14} />
+                    Review Queue
+                  </Link>
+                </>
               )}
             </nav>
           )}

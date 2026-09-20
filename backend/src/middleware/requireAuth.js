@@ -57,6 +57,8 @@ async function requireAuth(req, res, next) {
       name: appUser.name,
       email: appUser.email,
       role: appUser.role, // Determined strictly from database, NEVER from client request
+      authority_id: appUser.authority_id || null,
+      department_id: appUser.department_id || null,
       createdAt: appUser.created_at,
     };
 
