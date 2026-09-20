@@ -42,6 +42,23 @@ export const api = {
   // Phase 1 Auth & Current User
   getCurrentUser: (token) => apiRequest('/users/me', { token }),
 
+  login: (email, password) =>
+    apiRequest('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    }),
+
+  register: (payload) =>
+    apiRequest('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  logout: () =>
+    apiRequest('/auth/logout', {
+      method: 'POST',
+    }),
+
   syncRegister: (payload) =>
     apiRequest('/auth/register-sync', {
       method: 'POST',

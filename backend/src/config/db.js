@@ -2,6 +2,27 @@ const { Pool } = require('pg');
 const { v4: uuidv4 } = require('uuid');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
+
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(password, salt, 64).toString('hex');
+  return `${salt}:${hash}`;
+}
+
+function verifyPassword(password, storedHash) {
+  if (!storedHash || typeof storedHash !== 'string' || !storedHash.includes(':')) {
+    return false;
+  }
+  try {
+    const [salt, key] = storedHash.split(':');
+    const keyBuffer = Buffer.from(key, 'hex');
+    const derivedKey = crypto.scryptSync(password, salt, 64);
+    return crypto.timingSafeEqual(keyBuffer, derivedKey);
+  } catch {
+    return false;
+  }
+}
 
 let pool = null;
 let isPostgresConnected = false;
@@ -42,12 +63,14 @@ function isUuid(val) {
 function seedFallbackUsers() {
   if (fallbackUsers.size === 0) {
     const now = new Date().toISOString();
+    const defaultHash = hashPassword('CivicFlow@2026');
     fallbackUsers.set('dev-citizen-01', {
       id: '00000000-0000-0000-0000-000000000001',
       auth_uid: 'dev-citizen-01',
       name: 'Naveen Kumar (Mysuru Citizen)',
       email: 'citizen@mysuru.civicflow.in',
       role: 'CITIZEN',
+      password_hash: defaultHash,
       created_at: now,
       updated_at: now,
     });
@@ -57,6 +80,7 @@ function seedFallbackUsers() {
       name: 'Ananya Deshmukh (Other Citizen)',
       email: 'citizen2@mysuru.civicflow.in',
       role: 'CITIZEN',
+      password_hash: defaultHash,
       created_at: now,
       updated_at: now,
     });
@@ -68,6 +92,7 @@ function seedFallbackUsers() {
       role: 'STAFF',
       authority_id: null,
       department_id: null,
+      password_hash: defaultHash,
       created_at: now,
       updated_at: now,
     });
@@ -79,6 +104,7 @@ function seedFallbackUsers() {
       role: 'STAFF',
       authority_id: null,
       department_id: null,
+      password_hash: defaultHash,
       created_at: now,
       updated_at: now,
     });
@@ -88,6 +114,7 @@ function seedFallbackUsers() {
       name: 'Dr. Ramesh Rao (Chief Admin)',
       email: 'admin@mysuru.civicflow.in',
       role: 'ADMIN',
+      password_hash: defaultHash,
       created_at: now,
       updated_at: now,
     });
@@ -503,6 +530,7 @@ async function initDb() {
       -- Phase 7: Operational Civic Cases & Event Audit Log
       ALTER TABLE users ADD COLUMN IF NOT EXISTS authority_id UUID REFERENCES authorities(id);
       ALTER TABLE users ADD COLUMN IF NOT EXISTS department_id UUID REFERENCES departments(id);
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255);
       CREATE INDEX IF NOT EXISTS idx_users_authority_dept ON users(authority_id, department_id);
 
       CREATE SEQUENCE IF NOT EXISTS civic_case_seq START WITH 10001;
@@ -640,6 +668,11 @@ async function initDb() {
       CREATE INDEX IF NOT EXISTS idx_case_verifications_status ON case_verifications(status);
       CREATE INDEX IF NOT EXISTS idx_case_verifications_cycle ON case_verifications(case_id, cycle_number);
     `);
+
+    // Seed password hash for existing users who don't have one
+    const defaultHash = hashPassword('CivicFlow@2026');
+    await pool.query('UPDATE users SET password_hash = $1 WHERE password_hash IS NULL', [defaultHash]);
+
     console.log('[DB] PostGIS, Jurisdictions, Responsibility Rules, and Civic Cases schemas verified in PostgreSQL.');
     client.release();
   } catch (err) {
@@ -675,6 +708,20 @@ const db = {
 
   async getUserByEmail(email) {
     if (isPostgresConnected && pool) {
+      const res = await pool.query('SELECT id, auth_uid, name, email, role, authority_id, department_id, created_at, updated_at FROM users WHERE LOWER(email) = LOWER($1)', [email]);
+      return res.rows[0] || null;
+    }
+    for (const u of fallbackUsers.values()) {
+      if (u.email.toLowerCase() === email.toLowerCase()) {
+        const { password_hash, ...safe } = u;
+        return safe;
+      }
+    }
+    return null;
+  },
+
+  async getUserCredentialsByEmail(email) {
+    if (isPostgresConnected && pool) {
       const res = await pool.query('SELECT * FROM users WHERE LOWER(email) = LOWER($1)', [email]);
       return res.rows[0] || null;
     }
@@ -686,16 +733,19 @@ const db = {
 
   async getUserById(id) {
     if (isPostgresConnected && pool) {
-      const res = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
+      const res = await pool.query('SELECT id, auth_uid, name, email, role, authority_id, department_id, created_at, updated_at FROM users WHERE id = $1', [id]);
       return res.rows[0] || null;
     }
     for (const u of fallbackUsers.values()) {
-      if (u.id === id) return u;
+      if (u.id === id) {
+        const { password_hash, ...safe } = u;
+        return safe;
+      }
     }
     return null;
   },
 
-  async createUser({ authUid, name, email, role = 'CITIZEN' }) {
+  async createUser({ authUid, name, email, role = 'CITIZEN', passwordHash = null }) {
     const validRoles = ['CITIZEN', 'STAFF', 'ADMIN'];
     if (!validRoles.includes(role)) {
       throw new Error(`Invalid role: ${role}. Must be CITIZEN, STAFF, or ADMIN.`);
@@ -703,10 +753,10 @@ const db = {
 
     if (isPostgresConnected && pool) {
       const res = await pool.query(
-        `INSERT INTO users (auth_uid, name, email, role, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, NOW(), NOW())
-         RETURNING *`,
-        [authUid, name, email, role]
+        `INSERT INTO users (auth_uid, name, email, role, password_hash, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+         RETURNING id, auth_uid, name, email, role, authority_id, department_id, created_at, updated_at`,
+        [authUid, name, email, role, passwordHash]
       );
       return res.rows[0];
     }
@@ -718,11 +768,13 @@ const db = {
       name,
       email,
       role,
+      password_hash: passwordHash,
       created_at: now,
       updated_at: now,
     };
     fallbackUsers.set(authUid, newUser);
-    return newUser;
+    const { password_hash, ...safe } = newUser;
+    return safe;
   },
 
   async updateUserRole(email, role) {
@@ -2982,5 +3034,5 @@ const db = {
   },
 };
 
-module.exports = { initDb, db };
+module.exports = { initDb, db, hashPassword, verifyPassword };
 

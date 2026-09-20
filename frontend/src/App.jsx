@@ -57,7 +57,7 @@ function App() {
             <Route
               path="/staff/routing-review"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute allowedRoles={['STAFF', 'ADMIN']}>
                   <ReviewQueue />
                 </ProtectedRoute>
               }
@@ -65,7 +65,7 @@ function App() {
             <Route
               path="/staff/cases"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute allowedRoles={['STAFF', 'ADMIN']}>
                   <StaffCases />
                 </ProtectedRoute>
               }
@@ -73,7 +73,7 @@ function App() {
             <Route
               path="/staff/cases/:id"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute allowedRoles={['STAFF', 'ADMIN']}>
                   <CaseDetail />
                 </ProtectedRoute>
               }

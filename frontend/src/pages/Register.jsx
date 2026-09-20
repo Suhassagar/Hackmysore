@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { UserPlus, AlertCircle, ShieldCheck } from 'lucide-react';
+import { UserPlus, AlertCircle, ShieldCheck, Activity } from 'lucide-react';
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export const Register = () => {
   const [name, setName] = useState('');
@@ -21,13 +23,13 @@ export const Register = () => {
       return;
     }
 
-    if (!email.trim()) {
-      setLocalError('Email address is required.');
+    if (!email.trim() || !EMAIL_REGEX.test(email.trim())) {
+      setLocalError('Please enter a valid email address.');
       return;
     }
 
-    if (password.length < 6) {
-      setLocalError('Password must be at least 6 characters long.');
+    if (password.length < 8) {
+      setLocalError('Password must be at least 8 characters long.');
       return;
     }
 
@@ -36,7 +38,7 @@ export const Register = () => {
       return;
     }
 
-    // MANDATORY: No role is sent or selectable by the user. Backend forces role = 'CITIZEN'
+    // MANDATORY: No role is sent or selectable by the user. Backend strictly forces role = 'CITIZEN'
     const result = await register(name.trim(), email.trim(), password);
     if (result.success) {
       navigate('/');
@@ -48,25 +50,62 @@ export const Register = () => {
   return (
     <div className="auth-page-wrapper">
       <div className="auth-card">
-        <div className="auth-header">
-          <h1>CivicFlow</h1>
-          <p>Report civic problems. Get them to the right authority.</p>
-          <span className="auth-disclaimer">
-            HackMysuru Prototype — Not affiliated with real MCC systems
-          </span>
+        <div className="auth-header" style={{ textAlign: 'center' }}>
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '44px',
+              height: '44px',
+              borderRadius: '10px',
+              background: 'rgba(59, 130, 246, 0.1)',
+              color: 'var(--primary)',
+              marginBottom: '0.6rem',
+            }}
+          >
+            <Activity size={24} />
+          </div>
+          <h1 style={{ fontSize: '1.6rem', fontWeight: 700, letterSpacing: '-0.02em', margin: 0 }}>
+            CivicFlow
+          </h1>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', margin: '0.25rem 0 0 0' }}>
+            Smart Civic Issue Resolution
+          </p>
+
+          <div
+            style={{
+              height: '1px',
+              background: 'var(--border-subtle)',
+              margin: '1.25rem 0 1rem 0',
+            }}
+          />
+
+          <h2 style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
+            Create a Citizen Account
+          </h2>
         </div>
 
         {displayError && (
-          <div className="alert alert-error">
+          <div className="alert alert-error" style={{ marginTop: '1rem' }}>
             <AlertCircle size={18} style={{ flexShrink: 0, marginTop: '2px' }} />
             <div>{displayError}</div>
           </div>
         )}
 
-        <div className="alert alert-info" style={{ marginBottom: '1.25rem', fontSize: '0.8rem' }}>
+        <div
+          className="alert alert-info"
+          style={{
+            margin: '1rem 0',
+            fontSize: '0.8rem',
+            lineHeight: 1.45,
+            display: 'flex',
+            gap: '0.5rem',
+          }}
+        >
           <ShieldCheck size={16} style={{ flexShrink: 0, marginTop: '2px' }} />
           <div>
-            Public registration assigns the <strong>CITIZEN</strong> role. Staff and Admin accounts are provisioned exclusively via administrative authorization.
+            Public registration assigns the <strong>CITIZEN</strong> role. Staff and Administrative accounts are provisioned exclusively by municipal department administrators.
           </div>
         </div>
 
@@ -83,6 +122,7 @@ export const Register = () => {
               value={name}
               onChange={(e) => setName(e.target.value)}
               disabled={loading}
+              autoComplete="name"
               required
             />
           </div>
@@ -99,6 +139,7 @@ export const Register = () => {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               disabled={loading}
+              autoComplete="email"
               required
             />
           </div>
@@ -111,10 +152,11 @@ export const Register = () => {
               id="register-password"
               type="password"
               className="form-input"
-              placeholder="At least 6 characters"
+              placeholder="At least 8 characters"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               disabled={loading}
+              autoComplete="new-password"
               required
             />
           </div>
@@ -131,6 +173,7 @@ export const Register = () => {
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               disabled={loading}
+              autoComplete="new-password"
               required
             />
           </div>
@@ -138,18 +181,26 @@ export const Register = () => {
           <button
             type="submit"
             className="btn btn-primary"
-            style={{ width: '100%', marginTop: '0.5rem' }}
+            style={{ width: '100%', marginTop: '0.75rem' }}
             disabled={loading}
             id="register-submit"
           >
             <UserPlus size={16} />
-            {loading ? 'Registering Citizen Profile...' : 'Create Citizen Account'}
+            {loading ? 'Creating account...' : 'Create Citizen Account'}
           </button>
         </form>
 
-        <div className="form-footer">
+        <div
+          style={{
+            height: '1px',
+            background: 'var(--border-subtle)',
+            margin: '1.5rem 0 1rem 0',
+          }}
+        />
+
+        <div className="form-footer" style={{ textAlign: 'center', fontSize: '0.88rem' }}>
           Already have an account?{' '}
-          <Link to="/login" id="link-login">
+          <Link to="/login" id="link-login" style={{ fontWeight: 600 }}>
             Sign In
           </Link>
         </div>

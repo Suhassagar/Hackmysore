@@ -1,10 +1,158 @@
 const express = require('express');
+const { v4: uuidv4 } = require('uuid');
 const { requireAuth } = require('../middleware/requireAuth');
 const { requireRole } = require('../middleware/requireRole');
 const { createDevToken } = require('../config/firebase');
-const { db } = require('../config/db');
+const { db, hashPassword, verifyPassword } = require('../config/db');
 
 const router = express.Router();
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * POST /api/auth/register
+ * Production citizen registration endpoint.
+ *
+ * MANDATORY:
+ * - Collects Full Name, Email, Password.
+ * - Enforces minimum 8 characters for password.
+ * - Server strictly forces role = 'CITIZEN'. Discards client-supplied role, authority_id, department_id.
+ * - Automatically issues authenticated session token.
+ */
+router.post('/register', async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
+
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Full name is required.',
+      });
+    }
+
+    if (!email || typeof email !== 'string' || !EMAIL_REGEX.test(email.trim())) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'A valid email address is required.',
+      });
+    }
+
+    if (!password || typeof password !== 'string' || password.length < 8) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Password must be at least 8 characters long.',
+      });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+
+    // Check duplicate email
+    const existing = await db.getUserByEmail(normalizedEmail);
+    if (existing) {
+      return res.status(409).json({
+        error: 'Conflict',
+        message: 'An account with this email already exists.',
+      });
+    }
+
+    // Hash password and strictly assign role CITIZEN
+    const passwordHash = hashPassword(password);
+    const authUid = `usr_${uuidv4()}`;
+
+    const newUser = await db.createUser({
+      authUid,
+      name: name.trim(),
+      email: normalizedEmail,
+      role: 'CITIZEN', // STRICT SERVER-DERIVED ROLE: Client can NEVER choose or escalate role
+      passwordHash,
+    });
+
+    const token = createDevToken(newUser.auth_uid, newUser.email);
+
+    res.status(201).json({
+      message: 'Citizen account registered successfully',
+      token,
+      user: {
+        id: newUser.id,
+        authUid: newUser.auth_uid,
+        name: newUser.name,
+        email: newUser.email,
+        role: newUser.role,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'An unexpected error occurred while creating your account. Please try again.',
+    });
+  }
+});
+
+/**
+ * POST /api/auth/login
+ * Production credentials login endpoint.
+ *
+ * MANDATORY:
+ * - Requires Email and Password.
+ * - Verifies password against hashed storage.
+ * - Returns generic error on failure: "Email or password is incorrect."
+ * - Server determines and returns user role, authority, and department.
+ */
+router.post('/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Email and password are required.',
+      });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const user = await db.getUserCredentialsByEmail(normalizedEmail);
+
+    if (!user || !user.password_hash || !verifyPassword(password, user.password_hash)) {
+      return res.status(401).json({
+        error: 'Unauthorized',
+        message: 'Email or password is incorrect.',
+      });
+    }
+
+    // Issue signed JWT token
+    const token = createDevToken(user.auth_uid, user.email);
+
+    res.json({
+      message: 'Authenticated successfully',
+      token,
+      user: {
+        id: user.id,
+        authUid: user.auth_uid,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        authority_id: user.authority_id || null,
+        department_id: user.department_id || null,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'An unexpected authentication error occurred. Please try again.',
+    });
+  }
+});
+
+/**
+ * POST /api/auth/logout
+ * Acknowledges session termination on backend.
+ */
+router.post('/logout', (req, res) => {
+  res.json({
+    status: 'ok',
+    message: 'Session closed successfully.',
+  });
+});
 
 /**
  * POST /api/auth/register-sync

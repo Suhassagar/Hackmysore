@@ -120,6 +120,22 @@ export const Dashboard = () => {
               <RoleBadge role={user?.role} />
             </span>
           </div>
+          {user?.role === 'STAFF' && (
+            <>
+              <div className="detail-row">
+                <span className="detail-key">Authority Scope</span>
+                <span className="detail-val" style={{ fontSize: '0.85rem', fontWeight: 600 }}>
+                  {user?.authority_id ? user.authority_id : 'MCC (Mysuru City Corporation)'}
+                </span>
+              </div>
+              <div className="detail-row">
+                <span className="detail-key">Department Scope</span>
+                <span className="detail-val" style={{ fontSize: '0.85rem', fontWeight: 600 }}>
+                  {user?.department_id ? user.department_id : 'Municipal Operations'}
+                </span>
+              </div>
+            </>
+          )}
           <div className="detail-row">
             <span className="detail-key">Internal User ID</span>
             <span className="detail-val" style={{ fontSize: '0.78rem' }}>

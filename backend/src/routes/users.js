@@ -17,6 +17,8 @@ router.get('/me', requireAuth, async (req, res) => {
     name: req.user.name,
     email: req.user.email,
     role: req.user.role,
+    authority_id: req.user.authority_id || null,
+    department_id: req.user.department_id || null,
     createdAt: req.user.createdAt,
   });
 });

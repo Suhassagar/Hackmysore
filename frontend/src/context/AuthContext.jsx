@@ -75,99 +75,72 @@ export const AuthProvider = ({ children }) => {
 
   /**
    * User Registration
-   * Mandatory: Role strictly set to 'CITIZEN'
+   * Mandatory: Role strictly set to 'CITIZEN' on the server
    */
   const register = async (name, email, password) => {
     setAuthError(null);
     setLoading(true);
 
     try {
-      let authUid;
-      let authToken;
-
-      if (isFirebaseConfigured && auth) {
-        // 1. Create user in Firebase Authentication
-        const cred = await createUserWithEmailAndPassword(auth, email, password);
-        authUid = cred.user.uid;
-        authToken = await cred.user.getIdToken();
-      } else {
-        // Dev fallback provider
-        authUid = `auth-usr-${Date.now().toString(36)}`;
-        // We sync first, then get dev token
+      const res = await api.register({ name, email, password });
+      if (!res.ok) {
+        throw new Error(res.data?.message || 'Registration failed. Please verify your details.');
       }
 
-      // 2. Synchronize application user profile in PostgreSQL backend
-      // SECURITY MANDATE: Client sends name & email; backend forces role = 'CITIZEN'
-      const syncRes = await api.syncRegister({
-        authUid,
-        name,
-        email,
-      });
-
-      if (!syncRes.ok) {
-        throw new Error(syncRes.data?.message || 'Failed to create application user profile.');
-      }
-
-      // If in dev fallback mode, get dev token
-      if (!authToken) {
-        const devLoginRes = await api.devLogin(email);
-        if (devLoginRes.ok && devLoginRes.data.token) {
-          authToken = devLoginRes.data.token;
+      if (res.data?.token) {
+        const authToken = res.data.token;
+        setToken(authToken);
+        localStorage.setItem('civicflow_token', authToken);
+        if (res.data.user) {
+          setUser(res.data.user);
+        } else {
+          await fetchAndSetUserProfile(authToken);
         }
       }
-
-      setToken(authToken);
-      localStorage.setItem('civicflow_token', authToken);
-      await fetchAndSetUserProfile(authToken);
       return { success: true };
     } catch (err) {
       const errorMsg = err.message || 'Registration failed';
       setAuthError(errorMsg);
-      setLoading(false);
       return { success: false, error: errorMsg };
+    } finally {
+      setLoading(false);
     }
   };
 
   /**
-   * User Login
+   * User Login with Credentials
    */
   const login = async (email, password) => {
     setAuthError(null);
     setLoading(true);
 
     try {
-      let authToken;
-
-      if (isFirebaseConfigured && auth) {
-        const cred = await signInWithEmailAndPassword(auth, email, password);
-        authToken = await cred.user.getIdToken();
-      } else {
-        // Dev mode login
-        const devRes = await api.devLogin(email);
-        if (!devRes.ok) {
-          throw new Error(devRes.data?.message || 'Invalid credentials or user not registered');
-        }
-        authToken = devRes.data.token;
+      const res = await api.login(email, password);
+      if (!res.ok) {
+        throw new Error(res.data?.message || 'Email or password is incorrect.');
       }
 
+      const authToken = res.data.token;
       setToken(authToken);
       localStorage.setItem('civicflow_token', authToken);
-      await fetchAndSetUserProfile(authToken);
+      if (res.data.user) {
+        setUser(res.data.user);
+      } else {
+        await fetchAndSetUserProfile(authToken);
+      }
       return { success: true };
     } catch (err) {
-      let msg = err.message || 'Login failed';
-      if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
-        msg = 'Invalid email or password.';
-      }
+      const msg = err.message || 'Email or password is incorrect.';
       setAuthError(msg);
-      setLoading(false);
       return { success: false, error: msg };
+    } finally {
+      setLoading(false);
     }
   };
 
   /**
    * Dev Login / Quick Role Testing Switcher
-   * Useful for hackathon evaluation to test CITIZEN, STAFF, ADMIN without manual promotion
+   * Maintained exclusively for development environments & test runs
    */
   const switchDevRole = async (targetEmail) => {
     setLoading(true);
@@ -191,8 +164,9 @@ export const AuthProvider = ({ children }) => {
    */
   const logout = async () => {
     try {
+      await api.logout().catch(() => {});
       if (isFirebaseConfigured && auth) {
-        await firebaseSignOut(auth);
+        await firebaseSignOut(auth).catch(() => {});
       }
     } catch (err) {
       console.warn('[AuthContext] Firebase signOut warning:', err.message);
