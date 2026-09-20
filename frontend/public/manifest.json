@@ -1,0 +1,10 @@
+{
+  "short_name": "CivicFlow",
+  "name": "CivicFlow Mysuru",
+  "icons": [],
+  "start_url": "/",
+  "background_color": "#0f172a",
+  "theme_color": "#2563eb",
+  "display": "standalone",
+  "orientation": "portrait"
+}

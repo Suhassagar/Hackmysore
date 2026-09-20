@@ -29,6 +29,9 @@ import {
   ThumbsUp,
   ThumbsDown,
   X,
+  FileText,
+  HelpCircle,
+  ExternalLink,
 } from 'lucide-react';
 
 export const ReportDetail = () => {
@@ -60,7 +63,7 @@ export const ReportDetail = () => {
   const [verificationActionError, setVerificationActionError] = useState('');
   const [verificationActionSuccess, setVerificationActionSuccess] = useState('');
 
-  // Phase 6 Staff Review State
+  // Staff Review State (Staff/Admin only)
   const [authorities, setAuthorities] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [reviewMode, setReviewMode] = useState('APPROVE');
@@ -71,7 +74,7 @@ export const ReportDetail = () => {
   const [reviewSuccess, setReviewSuccess] = useState('');
   const [reviewError, setReviewError] = useState('');
 
-  // Fetch Report & AI Analysis
+  // Fetch Report & Associated Context
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
@@ -83,11 +86,11 @@ export const ReportDetail = () => {
         const reportRes = await api.getReportById(id, token);
         if (reportRes.status === 403) {
           setIsForbidden(true);
-          setError('Access Denied: You do not have authorization to view this citizen report (IDOR Protected).');
+          setError('Access Denied: You do not have authorization to view this citizen report.');
           setLoading(false);
           return;
         } else if (reportRes.status === 404) {
-          setError(`Report ID '${id}' does not exist.`);
+          setError(`Report #${id} does not exist or has been removed.`);
           setLoading(false);
           return;
         } else if (reportRes.ok && reportRes.data) {
@@ -100,7 +103,7 @@ export const ReportDetail = () => {
           setAnalysis(analysisRes.data.analysis);
         }
 
-        // 3. Fetch Historical Jurisdiction Snapshot (Phase 4)
+        // 3. Fetch Historical Jurisdiction Snapshot
         if (reportRes.data?.jurisdiction) {
           setJurisdiction(reportRes.data.jurisdiction);
         } else {
@@ -110,7 +113,7 @@ export const ReportDetail = () => {
           }
         }
 
-        // 4. Fetch Historical Routing Snapshot (Phase 5 & 6)
+        // 4. Fetch Historical Routing Snapshot
         if (reportRes.data?.routing) {
           setRouting(reportRes.data.routing);
         } else {
@@ -120,7 +123,7 @@ export const ReportDetail = () => {
           }
         }
 
-        // 5. Fetch Phase 6 Routing Review Audit History
+        // 5. Fetch Routing Review Audit History (for staff or review records)
         if (role === 'STAFF' || role === 'ADMIN' || reportRes.data?.routing?.decision_source === 'HUMAN_REVIEW') {
           const revRes = await api.getReportRoutingReviews(id, token);
           if (revRes.ok && revRes.data?.reviews) {
@@ -138,7 +141,7 @@ export const ReportDetail = () => {
           if (deptRes.ok && deptRes.data?.departments) setDepartments(deptRes.data.departments);
         }
 
-        // 7. Fetch Phase 7 Operational Case & Timeline
+        // 7. Fetch Operational Case & Timeline
         try {
           const caseRes = await api.getReportCase(id, token);
           if (caseRes.ok && caseRes.data?.case) {
@@ -155,7 +158,7 @@ export const ReportDetail = () => {
           console.warn('[ReportDetail] Could not load case for report:', cErr.message);
         }
 
-        // 8. Fetch Phase 8 Verification Snapshot & History
+        // 8. Fetch Verification Snapshot & History
         try {
           const vRes = await api.getReportVerification(id, token);
           if (vRes.ok && vRes.data) {
@@ -173,7 +176,7 @@ export const ReportDetail = () => {
           // Verification may not exist yet if case is not resolved
         }
       } catch (err) {
-        setError(err.message || 'Network error.');
+        setError(err.message || 'We could not connect to CivicFlow. Please check your connection and try again.');
       } finally {
         setLoading(false);
       }
@@ -189,18 +192,17 @@ export const ReportDetail = () => {
     try {
       const res = await api.confirmVerification(id, token);
       if (res.ok) {
-        setVerificationActionSuccess('Thank you! You have independently verified that this civic issue was resolved.');
+        setVerificationActionSuccess('Thank you! You have confirmed that this issue has been resolved. The case is now officially closed.');
         if (res.data?.verification) {
           setVerification(res.data.verification);
         }
-        // Refresh case & timeline
         const caseRes = await api.getReportCase(id, token);
         if (caseRes.ok && caseRes.data?.case) {
           setCivicCase(caseRes.data.case);
           setCaseTimeline(caseRes.data.timeline || []);
         }
       } else {
-        setVerificationActionError(res.data?.message || 'Failed to verify resolution.');
+        setVerificationActionError(res.data?.message || 'We could not complete your confirmation. Please try again.');
       }
     } catch (err) {
       setVerificationActionError(err.message || 'Error submitting confirmation.');
@@ -212,7 +214,7 @@ export const ReportDetail = () => {
   const handleDisputeSubmit = async (e) => {
     e.preventDefault();
     if (!disputeReason.trim() || disputeReason.trim().length < 10) {
-      setVerificationActionError('Dispute reason must be at least 10 characters detailing why the issue persists.');
+      setVerificationActionError('Please provide at least 10 characters explaining why the issue is still not resolved.');
       return;
     }
     setDisputeSubmitting(true);
@@ -221,20 +223,19 @@ export const ReportDetail = () => {
     try {
       const res = await api.disputeVerification(id, disputeReason.trim(), token);
       if (res.ok) {
-        setVerificationActionSuccess('Dispute submitted. Municipal staff have been alerted to reinvestigate.');
+        setVerificationActionSuccess('Your feedback has been recorded. Municipal staff have been alerted to reinvestigate and reopen the case.');
         setShowDisputeModal(false);
         setDisputeReason('');
         if (res.data?.verification) {
           setVerification(res.data.verification);
         }
-        // Refresh case & timeline
         const caseRes = await api.getReportCase(id, token);
         if (caseRes.ok && caseRes.data?.case) {
           setCivicCase(caseRes.data.case);
           setCaseTimeline(caseRes.data.timeline || []);
         }
       } else {
-        setVerificationActionError(res.data?.message || 'Failed to submit dispute.');
+        setVerificationActionError(res.data?.message || 'We could not submit your dispute. Please try again.');
       }
     } catch (err) {
       setVerificationActionError(err.message || 'Error submitting dispute.');
@@ -274,9 +275,8 @@ export const ReportDetail = () => {
         setReviewSuccess(
           reviewMode === 'APPROVE'
             ? 'Suggested route successfully approved!'
-            : 'Route successfully assigned by human override!'
+            : 'Route successfully assigned by staff override!'
         );
-        // Refresh routing & review history
         const [routRes, revRes] = await Promise.all([
           api.getReportRouting(id, token),
           api.getReportRoutingReviews(id, token),
@@ -297,7 +297,6 @@ export const ReportDetail = () => {
     }
   };
 
-  // Handle Triggering / Reprocessing AI Analysis
   const handleTriggerAnalysis = async (force = false) => {
     setAnalyzing(true);
     setAnalysisError('');
@@ -305,7 +304,6 @@ export const ReportDetail = () => {
       const res = await api.triggerReportAnalysis(id, token, force);
       if (res.ok && res.data?.analysis) {
         setAnalysis(res.data.analysis);
-        // Refresh routing snapshot since AI category or status may have changed
         const routRes = await api.getReportRouting(id, token);
         if (routRes.ok && routRes.data?.routing) {
           setRouting(routRes.data.routing);
@@ -314,7 +312,7 @@ export const ReportDetail = () => {
         setAnalysisError(res.data?.message || 'Failed to analyze report.');
       }
     } catch (err) {
-      setAnalysisError(err.message || 'Network error during AI analysis.');
+      setAnalysisError(err.message || 'Network error during analysis.');
     } finally {
       setAnalyzing(false);
     }
@@ -326,7 +324,6 @@ export const ReportDetail = () => {
       const res = await api.resolveReportJurisdiction(id, token);
       if (res.ok && res.data?.jurisdiction) {
         setJurisdiction(res.data.jurisdiction);
-        // Also refresh routing
         const routRes = await api.getReportRouting(id, token);
         if (routRes.ok && routRes.data?.routing) {
           setRouting(routRes.data.routing);
@@ -353,52 +350,110 @@ export const ReportDetail = () => {
     }
   };
 
-  const getSeverityBadgeColor = (severity) => {
-    switch (severity) {
-      case 'CRITICAL':
-        return { bg: 'rgba(239, 68, 68, 0.2)', border: '#ef4444', text: '#fca5a5' };
-      case 'HIGH':
-        return { bg: 'rgba(249, 115, 22, 0.2)', border: '#f97316', text: '#fdba74' };
-      case 'MEDIUM':
-        return { bg: 'rgba(234, 179, 8, 0.2)', border: '#eab308', text: '#fde047' };
+  // Helper for human-readable event labels
+  const formatEventName = (eventType) => {
+    switch (eventType) {
+      case 'REPORT_SUBMITTED':
+        return 'Report Submitted by Citizen';
+      case 'AUTO_ROUTED':
+      case 'ROUTED':
+        return 'CivicFlow Identified Responsible Department';
+      case 'CASE_CREATED':
+        return 'Official Civic Case Created';
+      case 'CASE_ACKNOWLEDGED':
+      case 'STAFF_ACKNOWLEDGED':
+        return 'Staff Acknowledged the Case';
+      case 'WORK_STARTED':
+        return 'Field Work Started';
+      case 'WORK_PAUSED':
+        return 'Work Paused by Staff';
+      case 'RESOLUTION_SUBMITTED':
+        return 'Remediation Completed by Field Team';
+      case 'RESOLUTION_VERIFIED':
+        return 'Resolution Confirmed by Citizen';
+      case 'RESOLUTION_DISPUTED':
+        return 'Resolution Disputed by Citizen';
+      case 'CASE_REOPENED':
+        return 'Case Reopened for Rework';
+      case 'HUMAN_REVIEW_SUBMITTED':
+        return 'Routing Assigned by Staff Review';
       default:
-        return { bg: 'rgba(16, 185, 129, 0.2)', border: '#10b981', text: '#86efac' };
+        return eventType.replace(/_/g, ' ').toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
     }
   };
 
+  // Human-readable status mapping
+  const getDisplayStatus = () => {
+    if (verification?.status === 'VERIFIED') return { label: 'VERIFIED', color: '#10b981', bg: 'rgba(16, 185, 129, 0.15)' };
+    if (verification?.status === 'DISPUTED') return { label: 'DISPUTED', color: '#ef4444', bg: 'rgba(239, 68, 68, 0.15)' };
+    if (civicCase?.status === 'RESOLVED') return { label: 'RESOLVED', color: '#10b981', bg: 'rgba(16, 185, 129, 0.15)' };
+    if (civicCase?.status === 'IN_PROGRESS') return { label: 'IN PROGRESS', color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.15)' };
+    if (civicCase?.status === 'ON_HOLD') return { label: 'ON HOLD', color: '#a855f7', bg: 'rgba(168, 85, 247, 0.15)' };
+    if (civicCase?.status === 'ACKNOWLEDGED') return { label: 'ACKNOWLEDGED', color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.15)' };
+    if (civicCase?.status === 'ASSIGNED') return { label: 'ASSIGNED', color: '#60a5fa', bg: 'rgba(96, 165, 250, 0.15)' };
+    if (routing?.assessment?.status === 'NEEDS_REVIEW' || routing?.routing_status === 'NEEDS_REVIEW') {
+      return { label: 'UNDER REVIEW', color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.15)' };
+    }
+    return { label: report?.status?.replace(/_/g, ' ') || 'SUBMITTED', color: '#94a3b8', bg: 'rgba(148, 163, 184, 0.15)' };
+  };
+
+  const currentStatus = getDisplayStatus();
+  const caseNumber = civicCase?.case_number || (report?.id ? `CIV-2026-${report.id.substring(0, 6).toUpperCase()}` : 'CIV-PENDING');
+
+  // Loading state
   if (loading) {
     return (
       <div className="main-content">
-        <div style={{ textAlign: 'center', padding: '3rem 0', color: 'var(--text-muted)' }}>
-          <div className="spinner" style={{ margin: '0 auto 1rem auto' }}></div>
-          Loading report details...
+        <div style={{ maxWidth: '840px', margin: '0 auto', textAlign: 'center', padding: '4rem 1rem' }}>
+          <div className="spinner" style={{ margin: '0 auto 1.5rem auto' }}></div>
+          <h3 style={{ color: 'var(--text-main)', marginBottom: '0.5rem' }}>Loading Report Details...</h3>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+            Retrieving case updates, municipal routing, and resolution status.
+          </p>
         </div>
       </div>
     );
   }
 
+  // Error / Forbidden State
   if (isForbidden || error) {
     return (
       <div className="main-content">
-        <div className="card" style={{ maxWidth: '600px', margin: '0 auto', textAlign: 'center', padding: '2.5rem' }}>
-          <ShieldAlert size={48} color="#ef4444" style={{ margin: '0 auto 1rem auto' }} />
-          <h2>{isForbidden ? 'Unauthorized Access' : 'Report Not Found'}</h2>
-          <p style={{ color: 'var(--text-muted)', margin: '0.75rem 0 1.5rem 0' }}>{error}</p>
-          <Link to="/my-reports" className="btn btn-primary">
-            Back to My Reports
+        <div className="card" style={{ maxWidth: '600px', margin: '3rem auto', textAlign: 'center', padding: '3rem 2rem' }}>
+          <ShieldAlert size={52} color="#ef4444" style={{ margin: '0 auto 1.25rem auto' }} />
+          <h2 style={{ fontSize: '1.4rem', marginBottom: '0.75rem' }}>
+            {isForbidden ? 'Private Report' : 'Report Unavailable'}
+          </h2>
+          <p style={{ color: 'var(--text-muted)', lineHeight: '1.6', marginBottom: '2rem' }}>
+            {error || 'This report cannot be found or you do not have permission to view it.'}
+          </p>
+          <Link to="/my-reports" className="btn btn-primary" id="error-back-btn">
+            <ArrowLeft size={16} /> Return to My Reports
           </Link>
         </div>
       </div>
     );
   }
 
+  const isNeedsReview = (routing?.assessment?.status === 'NEEDS_REVIEW' || routing?.routing_status === 'NEEDS_REVIEW') && !civicCase;
+
   return (
     <div className="main-content">
-      <div style={{ maxWidth: '820px', margin: '0 auto' }}>
+      <div style={{ maxWidth: '860px', margin: '0 auto', paddingBottom: '3rem' }}>
+        
+        {/* Navigation Breadcrumb */}
         <div style={{ marginBottom: '1.5rem' }}>
           <Link
             to="/my-reports"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.88rem', color: 'var(--text-muted)' }}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.45rem',
+              fontSize: '0.9rem',
+              color: 'var(--text-muted)',
+              textDecoration: 'none',
+              fontWeight: 500,
+            }}
             id="back-to-my-reports-link"
           >
             <ArrowLeft size={16} /> Back to My Reports
@@ -406,178 +461,228 @@ export const ReportDetail = () => {
         </div>
 
         {/* ========================================================================= */}
-        {/* PHASE 7: OPERATIONAL CIVIC CASE TRACKING & 5-STAGE CITIZEN JOURNEY        */}
+        {/* HERO CARD: WHAT HAPPENED & CURRENT CASE STATUS                            */}
         {/* ========================================================================= */}
         <div
           className="card"
           id="phase7-case-tracking-card"
           style={{
             marginBottom: '1.5rem',
-            border: '1px solid #3b82f6',
-            background: 'linear-gradient(180deg, #0d1a33 0%, #0a1122 100%)',
-            padding: '1.5rem',
+            border: '1px solid rgba(59, 130, 246, 0.4)',
+            background: 'linear-gradient(180deg, rgba(15, 23, 42, 0.95) 0%, rgba(10, 15, 30, 0.95) 100%)',
+            padding: '1.75rem',
             borderRadius: 'var(--radius-lg)',
+            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
           }}
         >
-          {/* Card Top: Case Identifier & Responsible Department */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1.5rem' }}>
+          {/* Header Row: Title & Status */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.25rem' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.4rem' }}>
+                <span
+                  style={{
+                    fontFamily: 'monospace',
+                    fontSize: '0.85rem',
+                    fontWeight: 700,
+                    color: '#60a5fa',
+                    letterSpacing: '0.04em',
+                    background: 'rgba(59, 130, 246, 0.15)',
+                    padding: '0.2rem 0.6rem',
+                    borderRadius: 'var(--radius-sm)',
+                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                  }}
+                >
+                  {caseNumber}
+                </span>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  Reported on {new Date(report.reportedAt || report.created_at || Date.now()).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
+                </span>
+              </div>
+              <h2 style={{ fontSize: '1.65rem', fontWeight: 800, color: '#ffffff', margin: 0, lineHeight: 1.2 }}>
+                {report.category || 'Civic Problem'}
+              </h2>
+            </div>
+
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <div
+              <span
                 style={{
-                  width: '42px',
-                  height: '42px',
-                  borderRadius: '10px',
-                  background: 'rgba(59, 130, 246, 0.2)',
-                  color: '#60a5fa',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
+                  padding: '0.4rem 0.9rem',
+                  borderRadius: '9999px',
+                  fontSize: '0.82rem',
+                  fontWeight: 800,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.04em',
+                  color: currentStatus.color,
+                  backgroundColor: currentStatus.bg,
+                  border: `1px solid ${currentStatus.color}`,
                 }}
               >
-                <Briefcase size={22} />
-              </div>
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                  <h3 style={{ fontSize: '1.25rem', color: '#fff', margin: 0, fontFamily: 'monospace', fontWeight: 700 }}>
-                    {civicCase ? civicCase.case_number : 'CIVIC CASE PENDING'}
-                  </h3>
-                  {civicCase && (
-                    <span
-                      style={{
-                        fontSize: '0.72rem',
-                        fontWeight: 700,
-                        padding: '0.2rem 0.6rem',
-                        borderRadius: '9999px',
-                        textTransform: 'uppercase',
-                        background:
-                          civicCase.status === 'RESOLVED'
-                            ? 'rgba(16, 185, 129, 0.2)'
-                            : civicCase.status === 'IN_PROGRESS'
-                            ? 'rgba(245, 158, 11, 0.2)'
-                            : civicCase.status === 'ON_HOLD'
-                            ? 'rgba(168, 85, 247, 0.2)'
-                            : civicCase.status === 'ACKNOWLEDGED'
-                            ? 'rgba(99, 102, 241, 0.2)'
-                            : civicCase.status === 'ASSIGNED'
-                            ? 'rgba(59, 130, 246, 0.2)'
-                            : 'rgba(148, 163, 184, 0.2)',
-                        color:
-                          civicCase.status === 'RESOLVED'
-                            ? '#6ee7b7'
-                            : civicCase.status === 'IN_PROGRESS'
-                            ? '#fcd34d'
-                            : civicCase.status === 'ON_HOLD'
-                            ? '#d8b4fe'
-                            : civicCase.status === 'ACKNOWLEDGED'
-                            ? '#a5b4fc'
-                            : civicCase.status === 'ASSIGNED'
-                            ? '#93c5fd'
-                            : '#cbd5e1',
-                        border: `1px solid ${
-                          civicCase.status === 'RESOLVED'
-                            ? '#10b981'
-                            : civicCase.status === 'IN_PROGRESS'
-                            ? '#f59e0b'
-                            : civicCase.status === 'ON_HOLD'
-                            ? '#a855f7'
-                            : '#3b82f6'
-                        }`,
-                      }}
-                    >
-                      {civicCase.status}
-                    </span>
-                  )}
-                </div>
-                <div style={{ fontSize: '0.8rem', color: '#93c5fd', marginTop: '0.2rem' }}>
-                  {civicCase ? (
-                    <>
-                      Responsible: <strong>{civicCase.authority_code} • {civicCase.department_name || civicCase.department_code}</strong>
-                    </>
-                  ) : routing?.assessment?.status === 'NEEDS_REVIEW' ? (
-                    <span style={{ color: '#fcd34d' }}>Routing under human review • Operational case pending adjudication</span>
-                  ) : (
-                    <span>Evaluating civic jurisdiction & routing snapshot...</span>
-                  )}
-                </div>
-              </div>
-            </div>
+                {currentStatus.label}
+              </span>
 
-            {(role === 'STAFF' || role === 'ADMIN') && civicCase && (
-              <Link
-                to={`/staff/cases/${civicCase.id}`}
-                className="btn btn-primary btn-sm"
-                style={{ fontSize: '0.78rem', padding: '0.35rem 0.75rem' }}
-              >
-                Staff Case Workspace →
-              </Link>
-            )}
+              {(role === 'STAFF' || role === 'ADMIN') && civicCase && (
+                <Link
+                  to={`/staff/cases/${civicCase.id}`}
+                  className="btn btn-outline btn-sm"
+                  style={{ fontSize: '0.8rem', padding: '0.35rem 0.75rem' }}
+                >
+                  Staff Workspace →
+                </Link>
+              )}
+            </div>
           </div>
 
-          {/* 5-Stage Citizen Journey Stepper */}
-          <div style={{ background: 'rgba(0, 0, 0, 0.3)', padding: '1.25rem', borderRadius: 'var(--radius-md)', border: '1px solid rgba(255, 255, 255, 0.07)', marginBottom: '1.25rem' }}>
-            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '1rem' }}>
-              Operational Civic Journey
+          {/* Citizen Description Quote */}
+          <div
+            style={{
+              background: 'rgba(255, 255, 255, 0.03)',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+              borderRadius: 'var(--radius-md)',
+              padding: '1.15rem',
+              marginBottom: '1.5rem',
+            }}
+          >
+            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.4rem' }}>
+              Citizen Description
+            </div>
+            <p style={{ fontSize: '1rem', color: 'var(--text-main)', lineHeight: '1.6', margin: 0 }}>
+              &ldquo;{report.description}&rdquo;
+            </p>
+          </div>
+
+          {/* Phase 3B: Multi-Citizen Incident Cluster Notice */}
+          {(report.incident || report.incidentId) && (
+            <div
+              style={{
+                background: 'rgba(99, 102, 241, 0.08)',
+                border: '1px solid rgba(99, 102, 241, 0.25)',
+                borderRadius: 'var(--radius-md)',
+                padding: '0.85rem 1.15rem',
+                marginBottom: '1.25rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.75rem',
+              }}
+            >
+              <Layers size={20} color="#818cf8" style={{ flexShrink: 0 }} />
+              <div>
+                <div style={{ fontSize: '0.88rem', fontWeight: 600, color: '#c7d2fe' }}>
+                  Multi-Citizen Incident Cluster
+                </div>
+                <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
+                  This problem was also reported by other citizens nearby. All {report.incident?.reportCount || 2} reports are linked to this single incident for unified field resolution.
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Attached Citizen Photo Evidence */}
+          {report.photoUrl && (
+            <div style={{ marginBottom: '1.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Citizen Evidence Photo
+                </div>
+                {/* Photo Authenticity Signal Badge (Phase 3B) */}
+                {report.photoStatus === 'VALID' && (
+                  <span style={{ fontSize: '0.75rem', padding: '0.2rem 0.6rem', borderRadius: '9999px', background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.3)', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                    <Check size={12} /> Verified Location Metadata
+                  </span>
+                )}
+                {report.photoStatus === 'LOCATION_MISMATCH' && (
+                  <span style={{ fontSize: '0.75rem', padding: '0.2rem 0.6rem', borderRadius: '9999px', background: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24', border: '1px solid rgba(245, 158, 11, 0.3)', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                    <AlertTriangle size={12} /> Location Mismatch Detected (&gt;500m)
+                  </span>
+                )}
+                {(!report.photoStatus || report.photoStatus === 'VALID_NO_METADATA') && (
+                  <span style={{ fontSize: '0.75rem', padding: '0.2rem 0.6rem', borderRadius: '9999px', background: 'rgba(148, 163, 184, 0.1)', color: '#94a3b8', border: '1px solid rgba(148, 163, 184, 0.2)', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                    <Info size={12} /> Standard Upload
+                  </span>
+                )}
+              </div>
+              <img
+                src={report.photoUrl}
+                alt="Civic issue evidence"
+                style={{
+                  maxWidth: '100%',
+                  maxHeight: '340px',
+                  borderRadius: 'var(--radius-md)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  objectFit: 'cover',
+                  display: 'block',
+                }}
+              />
+            </div>
+          )}
+
+          {/* ===================================================================== */}
+          {/* CASE PROGRESS: 6-STAGE CITIZEN JOURNEY STEPPER                         */}
+          {/* ===================================================================== */}
+          <div style={{ borderTop: '1px solid rgba(255, 255, 255, 0.08)', paddingTop: '1.25rem', marginBottom: '0.5rem' }}>
+            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.85rem' }}>
+              Case Progress
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.75rem' }}>
-              {/* Stage 1: Report Received */}
-              <div style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(16, 185, 129, 0.12)', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: '#6ee7b7', fontSize: '0.8rem', fontWeight: 600 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(125px, 1fr))', gap: '0.6rem' }}>
+              {/* Step 1: Report Received */}
+              <div style={{ padding: '0.75rem 0.6rem', borderRadius: '8px', background: 'rgba(16, 185, 129, 0.12)', border: '1px solid rgba(16, 185, 129, 0.3)', textAlign: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem', color: '#6ee7b7', fontSize: '0.8rem', fontWeight: 700 }}>
                   <Check size={14} /> Report Received
                 </div>
                 <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '0.2rem' }}>
-                  {new Date(report.reportedAt || report.created_at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  Logged in system
                 </div>
               </div>
 
-              {/* Stage 2: Routed */}
+              {/* Step 2: Routed */}
               {(() => {
                 const isRouted = Boolean(civicCase || routing?.routing_status === 'ROUTED' || routing?.assessment?.status === 'AUTO_ROUTED' || routing?.decision_source === 'HUMAN_REVIEW');
-                const isReview = routing?.assessment?.status === 'NEEDS_REVIEW' && !civicCase;
+                const isReview = isNeedsReview;
                 return (
                   <div
                     style={{
-                      padding: '0.75rem',
+                      padding: '0.75rem 0.6rem',
                       borderRadius: '8px',
-                      background: isRouted ? 'rgba(16, 185, 129, 0.12)' : isReview ? 'rgba(245, 158, 11, 0.12)' : 'rgba(255, 255, 255, 0.04)',
-                      border: `1px solid ${isRouted ? 'rgba(16, 185, 129, 0.3)' : isReview ? 'rgba(245, 158, 11, 0.3)' : 'rgba(255, 255, 255, 0.08)'}`,
+                      background: isRouted ? 'rgba(16, 185, 129, 0.12)' : isReview ? 'rgba(245, 158, 11, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                      border: `1px solid ${isRouted ? 'rgba(16, 185, 129, 0.3)' : isReview ? 'rgba(245, 158, 11, 0.4)' : 'rgba(255, 255, 255, 0.08)'}`,
+                      textAlign: 'center',
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: isRouted ? '#6ee7b7' : isReview ? '#fcd34d' : '#94a3b8', fontSize: '0.8rem', fontWeight: 600 }}>
-                      {isRouted ? <Check size={14} /> : isReview ? <AlertTriangle size={14} /> : '○'} {isReview ? 'Routing Review' : 'Department Routed'}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem', color: isRouted ? '#6ee7b7' : isReview ? '#fcd34d' : '#94a3b8', fontSize: '0.8rem', fontWeight: 700 }}>
+                      {isRouted ? <Check size={14} /> : isReview ? <AlertTriangle size={14} /> : '○'} Routed
                     </div>
-                    <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '0.2rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {civicCase ? civicCase.department_code : isReview ? 'Requires review' : 'Evaluating route...'}
+                    <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '0.2rem', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                      {civicCase?.department_code || (isReview ? 'Staff review' : 'Identified')}
                     </div>
                   </div>
                 );
               })()}
 
-              {/* Stage 3: Staff Acknowledged */}
+              {/* Step 3: Staff Acknowledged */}
               {(() => {
                 const isAck = Boolean(civicCase?.acknowledged_at || ['ACKNOWLEDGED', 'IN_PROGRESS', 'ON_HOLD', 'RESOLVED', 'CLOSED'].includes(civicCase?.status));
                 const isAssigned = civicCase?.status === 'ASSIGNED';
                 return (
                   <div
                     style={{
-                      padding: '0.75rem',
+                      padding: '0.75rem 0.6rem',
                       borderRadius: '8px',
-                      background: isAck ? 'rgba(16, 185, 129, 0.12)' : isAssigned ? 'rgba(59, 130, 246, 0.12)' : 'rgba(255, 255, 255, 0.04)',
+                      background: isAck ? 'rgba(16, 185, 129, 0.12)' : isAssigned ? 'rgba(59, 130, 246, 0.12)' : 'rgba(255, 255, 255, 0.03)',
                       border: `1px solid ${isAck ? 'rgba(16, 185, 129, 0.3)' : isAssigned ? 'rgba(59, 130, 246, 0.3)' : 'rgba(255, 255, 255, 0.08)'}`,
+                      textAlign: 'center',
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: isAck ? '#6ee7b7' : isAssigned ? '#93c5fd' : '#94a3b8', fontSize: '0.8rem', fontWeight: 600 }}>
-                      {isAck ? <Check size={14} /> : isAssigned ? '●' : '○'} Staff Acknowledged
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem', color: isAck ? '#6ee7b7' : isAssigned ? '#93c5fd' : '#94a3b8', fontSize: '0.8rem', fontWeight: 700 }}>
+                      {isAck ? <Check size={14} /> : isAssigned ? '●' : '○'} Acknowledged
                     </div>
                     <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '0.2rem' }}>
-                      {isAck ? 'Acknowledged' : isAssigned ? 'Staff assigned' : 'Awaiting assignment'}
+                      {isAck ? 'Confirmed by dept' : isAssigned ? 'Staff assigned' : 'Pending'}
                     </div>
                   </div>
                 );
               })()}
 
-              {/* Stage 4: Work In Progress */}
+              {/* Step 4: Work in Progress */}
               {(() => {
                 const isResolved = ['RESOLVED', 'CLOSED'].includes(civicCase?.status);
                 const isInProgress = civicCase?.status === 'IN_PROGRESS';
@@ -585,1396 +690,709 @@ export const ReportDetail = () => {
                 return (
                   <div
                     style={{
-                      padding: '0.75rem',
+                      padding: '0.75rem 0.6rem',
                       borderRadius: '8px',
-                      background: isResolved ? 'rgba(16, 185, 129, 0.12)' : isInProgress ? 'rgba(245, 158, 11, 0.15)' : isOnHold ? 'rgba(168, 85, 247, 0.15)' : 'rgba(255, 255, 255, 0.04)',
+                      background: isResolved ? 'rgba(16, 185, 129, 0.12)' : isInProgress ? 'rgba(245, 158, 11, 0.15)' : isOnHold ? 'rgba(168, 85, 247, 0.15)' : 'rgba(255, 255, 255, 0.03)',
                       border: `1px solid ${isResolved ? 'rgba(16, 185, 129, 0.3)' : isInProgress ? 'rgba(245, 158, 11, 0.4)' : isOnHold ? 'rgba(168, 85, 247, 0.4)' : 'rgba(255, 255, 255, 0.08)'}`,
+                      textAlign: 'center',
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: isResolved ? '#6ee7b7' : isInProgress ? '#fcd34d' : isOnHold ? '#d8b4fe' : '#94a3b8', fontSize: '0.8rem', fontWeight: 600 }}>
-                      {isResolved ? <Check size={14} /> : isInProgress ? '●' : isOnHold ? <PauseCircle size={14} /> : '○'} Work Status
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem', color: isResolved ? '#6ee7b7' : isInProgress ? '#fcd34d' : isOnHold ? '#d8b4fe' : '#94a3b8', fontSize: '0.8rem', fontWeight: 700 }}>
+                      {isResolved ? <Check size={14} /> : isInProgress ? '●' : isOnHold ? <PauseCircle size={14} /> : '○'} Work Progress
                     </div>
                     <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '0.2rem' }}>
-                      {isResolved ? 'Work completed' : isInProgress ? 'Active on site' : isOnHold ? `Paused: ${civicCase.on_hold_reason || 'Pending'}` : 'Pending start'}
+                      {isResolved ? 'Work done' : isInProgress ? 'Active on site' : isOnHold ? 'Temporarily paused' : 'Pending'}
                     </div>
                   </div>
                 );
               })()}
 
-              {/* Stage 5: Staff Resolution */}
+              {/* Step 5: Resolved */}
               {(() => {
                 const isResolved = ['RESOLVED', 'CLOSED'].includes(civicCase?.status);
                 return (
                   <div
                     style={{
-                      padding: '0.75rem',
+                      padding: '0.75rem 0.6rem',
                       borderRadius: '8px',
-                      background: isResolved ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 255, 255, 0.04)',
+                      background: isResolved ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 255, 255, 0.03)',
                       border: `1px solid ${isResolved ? 'rgba(16, 185, 129, 0.4)' : 'rgba(255, 255, 255, 0.08)'}`,
+                      textAlign: 'center',
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: isResolved ? '#6ee7b7' : '#94a3b8', fontSize: '0.8rem', fontWeight: 600 }}>
-                      {isResolved ? <Check size={14} /> : '○'} Staff Resolved
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem', color: isResolved ? '#6ee7b7' : '#94a3b8', fontSize: '0.8rem', fontWeight: 700 }}>
+                      {isResolved ? <Check size={14} /> : '○'} Resolved
                     </div>
                     <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '0.2rem' }}>
-                      {isResolved ? 'Claimed by staff' : 'Resolution pending'}
+                      {isResolved ? 'Fixed by staff' : 'Awaiting fix'}
                     </div>
                   </div>
                 );
               })()}
 
-              {/* Stage 6: Citizen Verification (RESOLVED != VERIFIED) */}
+              {/* Step 6: Citizen Verified */}
               {(() => {
                 const isVerified = verification?.status === 'VERIFIED';
                 const isDisputed = verification?.status === 'DISPUTED';
                 const isPendingVer = verification?.status === 'PENDING';
-                const isReopened = civicCase?.status === 'IN_PROGRESS' && caseTimeline.some((e) => e.event_type === 'CASE_REOPENED');
-
-                const bg = isVerified
-                  ? 'rgba(16, 185, 129, 0.18)'
-                  : isDisputed
-                  ? 'rgba(239, 68, 68, 0.18)'
-                  : isReopened
-                  ? 'rgba(168, 85, 247, 0.18)'
-                  : isPendingVer
-                  ? 'rgba(245, 158, 11, 0.18)'
-                  : 'rgba(255, 255, 255, 0.04)';
-
-                const border = isVerified
-                  ? 'rgba(16, 185, 129, 0.4)'
-                  : isDisputed
-                  ? 'rgba(239, 68, 68, 0.4)'
-                  : isReopened
-                  ? 'rgba(168, 85, 247, 0.4)'
-                  : isPendingVer
-                  ? 'rgba(245, 158, 11, 0.4)'
-                  : 'rgba(255, 255, 255, 0.08)';
-
-                const color = isVerified
-                  ? '#6ee7b7'
-                  : isDisputed
-                  ? '#fca5a5'
-                  : isReopened
-                  ? '#d8b4fe'
-                  : isPendingVer
-                  ? '#fcd34d'
-                  : '#94a3b8';
-
                 return (
                   <div
                     style={{
-                      padding: '0.75rem',
+                      padding: '0.75rem 0.6rem',
                       borderRadius: '8px',
-                      background: bg,
-                      border: `1px solid ${border}`,
+                      background: isVerified ? 'rgba(16, 185, 129, 0.2)' : isDisputed ? 'rgba(239, 68, 68, 0.18)' : isPendingVer ? 'rgba(245, 158, 11, 0.18)' : 'rgba(255, 255, 255, 0.03)',
+                      border: `1px solid ${isVerified ? 'rgba(16, 185, 129, 0.4)' : isDisputed ? 'rgba(239, 68, 68, 0.4)' : isPendingVer ? 'rgba(245, 158, 11, 0.4)' : 'rgba(255, 255, 255, 0.08)'}`,
+                      textAlign: 'center',
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color, fontSize: '0.8rem', fontWeight: 600 }}>
-                      {isVerified ? (
-                        <ShieldCheck size={14} />
-                      ) : isDisputed ? (
-                        <AlertTriangle size={14} />
-                      ) : isReopened ? (
-                        <RotateCcw size={14} />
-                      ) : isPendingVer ? (
-                        '●'
-                      ) : (
-                        '○'
-                      )}{' '}
-                      Citizen Verification
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem', color: isVerified ? '#6ee7b7' : isDisputed ? '#fca5a5' : isPendingVer ? '#fcd34d' : '#94a3b8', fontSize: '0.8rem', fontWeight: 700 }}>
+                      {isVerified ? <ShieldCheck size={14} /> : isDisputed ? <AlertTriangle size={14} /> : isPendingVer ? '●' : '○'} Citizen Verified
                     </div>
                     <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '0.2rem' }}>
-                      {isVerified
-                        ? 'Citizen Confirmed ✓'
-                        : isDisputed
-                        ? 'Disputed by Citizen ⚠'
-                        : isReopened
-                        ? 'Reopened for Rework'
-                        : isPendingVer
-                        ? 'Awaiting Confirmation'
-                        : 'Awaiting Fix'}
+                      {isVerified ? 'Confirmed ✓' : isDisputed ? 'Disputed ⚠' : isPendingVer ? 'Awaiting you' : 'Pending fix'}
                     </div>
                   </div>
                 );
               })()}
             </div>
           </div>
+        </div>
 
-          {/* Phase 8: Citizen Resolution Verification Card */}
-          {(civicCase?.status === 'RESOLVED' || verification) && (
+        {/* ========================================================================= */}
+        {/* UNDER REVIEW ADVISORY (NON-ERROR STATE)                                   */}
+        {/* ========================================================================= */}
+        {isNeedsReview && (
+          <div
+            style={{
+              marginBottom: '1.5rem',
+              background: 'linear-gradient(180deg, rgba(245, 158, 11, 0.15) 0%, rgba(217, 119, 6, 0.1) 100%)',
+              border: '1px solid rgba(245, 158, 11, 0.35)',
+              borderRadius: 'var(--radius-md)',
+              padding: '1.25rem',
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '1rem',
+            }}
+          >
             <div
-              id="citizen-resolution-verification-card"
               style={{
-                marginBottom: '1.25rem',
-                borderRadius: 'var(--radius-md)',
-                padding: '1.25rem',
-                border:
-                  verification?.status === 'VERIFIED'
-                    ? '1px solid rgba(16, 185, 129, 0.5)'
-                    : verification?.status === 'DISPUTED'
-                    ? '1px solid rgba(239, 68, 68, 0.5)'
-                    : '1px solid rgba(245, 158, 11, 0.5)',
-                background:
-                  verification?.status === 'VERIFIED'
-                    ? 'linear-gradient(180deg, rgba(6, 78, 59, 0.35) 0%, rgba(2, 44, 34, 0.55) 100%)'
-                    : verification?.status === 'DISPUTED'
-                    ? 'linear-gradient(180deg, rgba(127, 29, 29, 0.35) 0%, rgba(69, 10, 10, 0.55) 100%)'
-                    : 'linear-gradient(180deg, rgba(120, 53, 15, 0.3) 0%, rgba(69, 26, 3, 0.5) 100%)',
+                width: '38px',
+                height: '38px',
+                borderRadius: '8px',
+                background: 'rgba(245, 158, 11, 0.2)',
+                color: '#fcd34d',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
               }}
             >
-              {/* Card Header */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  {verification?.status === 'VERIFIED' ? (
-                    <ShieldCheck size={22} color="#10b981" />
-                  ) : verification?.status === 'DISPUTED' ? (
-                    <AlertTriangle size={22} color="#ef4444" />
-                  ) : (
-                    <Clock size={22} color="#f59e0b" />
-                  )}
-                  <div>
-                    <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0, color: '#f8fafc' }}>
-                      {verification?.status === 'VERIFIED'
-                        ? 'Resolution Independently Verified by Citizen'
-                        : verification?.status === 'DISPUTED'
-                        ? 'Resolution Disputed by Citizen'
-                        : 'Staff Claimed Resolution — Citizen Verification Required'}
-                    </h3>
-                    <div style={{ fontSize: '0.75rem', color: '#cbd5e1', marginTop: '0.15rem' }}>
-                      Phase 8 Verification Standard: <strong>RESOLVED ≠ VERIFIED</strong>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Status Badge */}
-                <span
-                  style={{
-                    padding: '0.3rem 0.75rem',
-                    borderRadius: '9999px',
-                    fontSize: '0.78rem',
-                    fontWeight: 700,
-                    textTransform: 'uppercase',
-                    background:
-                      verification?.status === 'VERIFIED'
-                        ? 'rgba(16, 185, 129, 0.25)'
-                        : verification?.status === 'DISPUTED'
-                        ? 'rgba(239, 68, 68, 0.25)'
-                        : 'rgba(245, 158, 11, 0.25)',
-                    color:
-                      verification?.status === 'VERIFIED'
-                        ? '#6ee7b7'
-                        : verification?.status === 'DISPUTED'
-                        ? '#fca5a5'
-                        : '#fcd34d',
-                    border: `1px solid ${
-                      verification?.status === 'VERIFIED'
-                        ? '#10b981'
-                        : verification?.status === 'DISPUTED'
-                        ? '#ef4444'
-                        : '#f59e0b'
-                    }`,
-                  }}
-                >
-                  {verification?.status || 'PENDING VERIFICATION'}
-                </span>
+              <Info size={22} />
+            </div>
+            <div>
+              <h4 style={{ color: '#fef3c7', margin: '0 0 0.35rem 0', fontSize: '1rem', fontWeight: 700 }}>
+                Routing Review in Progress
+              </h4>
+              <p style={{ color: '#fde68a', fontSize: '0.88rem', margin: '0 0 0.5rem 0', lineHeight: 1.5 }}>
+                CivicFlow could not confidently determine the responsible civic authority for this location automatically. Your report has been dispatched to civic staff for a quick manual review.
+              </p>
+              <div style={{ fontSize: '0.78rem', color: '#fcd34d', fontWeight: 600 }}>
+                Status: UNDER REVIEW &bull; You will be notified as soon as a department acknowledges your case.
               </div>
+            </div>
+          </div>
+        )}
 
-              {/* Action Error or Success Banner */}
-              {verificationActionError && (
-                <div style={{ padding: '0.75rem', borderRadius: '6px', background: 'rgba(239, 68, 68, 0.2)', border: '1px solid #ef4444', color: '#fca5a5', fontSize: '0.85rem', marginBottom: '1rem' }}>
-                  {verificationActionError}
+        {/* ========================================================================= */}
+        {/* THE THREE CIVIC PILLARS: WHAT + WHERE + WHO                               */}
+        {/* ========================================================================= */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+          
+          {/* PILLAR 1: WHAT WE UNDERSTOOD (AI Analysis) */}
+          <div
+            className="card"
+            style={{
+              background: 'linear-gradient(180deg, #111a2e 0%, #0c1220 100%)',
+              border: '1px solid rgba(59, 130, 246, 0.3)',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+            }}
+          >
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.85rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', color: '#60a5fa', fontWeight: 700, fontSize: '0.82rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  <Sparkles size={16} /> What We Understood
                 </div>
-              )}
-              {verificationActionSuccess && (
-                <div style={{ padding: '0.75rem', borderRadius: '6px', background: 'rgba(16, 185, 129, 0.2)', border: '1px solid #10b981', color: '#6ee7b7', fontSize: '0.85rem', marginBottom: '1rem' }}>
-                  {verificationActionSuccess}
-                </div>
-              )}
-
-              {/* Staff Resolution Notes & Attached Evidence */}
-              <div style={{ background: 'rgba(0, 0, 0, 0.35)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.08)', marginBottom: '1rem' }}>
-                <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: 700, color: '#94a3b8', letterSpacing: '0.05em', marginBottom: '0.4rem' }}>
-                  Municipal Staff Remediation Claim
-                </div>
-                <div style={{ fontSize: '0.92rem', color: '#e2e8f0', lineHeight: 1.5 }}>
-                  "{verification?.resolution_note || civicCase?.resolution_notes || 'Remediation completed by field team.'}"
-                </div>
-
-                {/* Evidence Photo if attached */}
-                {(verificationEvidence?.media_url || civicCase?.latest_evidence?.media_url) && (
-                  <div style={{ marginTop: '0.75rem' }}>
-                    <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.35rem' }}>
-                      Staff Resolution Evidence Photo:
-                    </div>
-                    <img
-                      src={verificationEvidence?.media_url || civicCase?.latest_evidence?.media_url}
-                      alt="Staff Resolution Evidence"
-                      style={{
-                        maxHeight: '220px',
-                        borderRadius: '6px',
-                        border: '1px solid rgba(255, 255, 255, 0.15)',
-                        objectFit: 'cover',
-                      }}
-                    />
-                  </div>
+                {analysis?.confidence && (
+                  <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#93c5fd', background: 'rgba(59, 130, 246, 0.15)', padding: '0.15rem 0.5rem', borderRadius: '4px' }}>
+                    AI confidence: {Math.round(analysis.confidence * 100)}%
+                  </span>
                 )}
               </div>
 
-              {/* Citizen Dispute Record (if DISPUTED) */}
-              {verification?.status === 'DISPUTED' && (
-                <div style={{ background: 'rgba(239, 68, 68, 0.15)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(239, 68, 68, 0.3)', marginBottom: '1rem' }}>
-                  <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: 700, color: '#fca5a5', letterSpacing: '0.05em', marginBottom: '0.35rem' }}>
-                    Citizen Dispute Reason
-                  </div>
-                  <div style={{ fontSize: '0.92rem', color: '#fee2e2', fontStyle: 'italic', lineHeight: 1.5 }}>
-                    "{verification.dispute_reason}"
-                  </div>
-                  <div style={{ fontSize: '0.75rem', color: '#f87171', marginTop: '0.5rem' }}>
-                    Awaiting municipal staff review and work resumption.
-                  </div>
-                </div>
-              )}
+              <div style={{ fontSize: '1.15rem', fontWeight: 700, color: '#ffffff', marginBottom: '0.4rem' }}>
+                {analysis?.category || report.category}
+              </div>
 
-              {/* Citizen Confirmation Record (if VERIFIED) */}
-              {verification?.status === 'VERIFIED' && (
-                <div style={{ background: 'rgba(16, 185, 129, 0.15)', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid rgba(16, 185, 129, 0.3)', marginBottom: '0.5rem' }}>
-                  <div style={{ fontSize: '0.85rem', color: '#6ee7b7', fontWeight: 600 }}>
-                    ✓ The reporting citizen confirmed the problem is fully resolved. Case is closed with full verification accountability.
-                  </div>
-                </div>
-              )}
+              <p style={{ fontSize: '0.84rem', color: 'var(--text-muted)', lineHeight: '1.5', margin: '0 0 0.85rem 0' }}>
+                {analysis?.summary || 'Problem identified and registered from citizen report.'}
+              </p>
 
-              {/* Verification Interactive Choice for Citizen Owner */}
-              {verification?.status === 'PENDING' && (
-                <div>
-                  <div style={{ fontSize: '0.85rem', color: '#fcd34d', marginBottom: '0.85rem', lineHeight: 1.5 }}>
-                    <strong>Citizen Verification Notice:</strong> Municipal staff have reported this issue as resolved. Please inspect the location and confirm whether the physical issue has been satisfactorily fixed.
-                  </div>
-
-                  <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-                    <button
-                      id="btn-confirm-verification"
-                      onClick={handleConfirmVerification}
-                      disabled={confirmingVerification}
-                      className="btn"
+              {Array.isArray(analysis?.risk_factors) && analysis.risk_factors.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', marginBottom: '0.85rem' }}>
+                  {analysis.risk_factors.map((risk, idx) => (
+                    <span
+                      key={idx}
                       style={{
-                        background: '#059669',
-                        color: '#fff',
+                        background: 'rgba(239, 68, 68, 0.12)',
+                        color: '#fca5a5',
+                        border: '1px solid rgba(239, 68, 68, 0.25)',
+                        padding: '0.15rem 0.5rem',
+                        borderRadius: '9999px',
+                        fontSize: '0.72rem',
                         fontWeight: 600,
-                        fontSize: '0.88rem',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.4rem',
                       }}
                     >
-                      <Check size={16} />
-                      {confirmingVerification ? 'Confirming...' : 'Confirm Resolved'}
-                    </button>
-
-                    <button
-                      id="btn-dispute-verification"
-                      onClick={() => setShowDisputeModal(true)}
-                      disabled={confirmingVerification}
-                      className="btn"
-                      style={{
-                        background: '#dc2626',
-                        color: '#fff',
-                        fontWeight: 600,
-                        fontSize: '0.88rem',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.4rem',
-                      }}
-                    >
-                      <AlertTriangle size={16} />
-                      Issue Still Exists (Dispute)
-                    </button>
-                  </div>
+                      {risk}
+                    </span>
+                  ))}
                 </div>
               )}
             </div>
-          )}
 
-          {/* Citizen-Safe Operational Activity Timeline */}
-          {caseTimeline.length > 0 && (
+            <div style={{ fontSize: '0.72rem', color: '#64748b', borderTop: '1px solid rgba(255, 255, 255, 0.05)', paddingTop: '0.6rem' }}>
+              CivicFlow uses AI to assist in understanding issues, not to make municipal decisions.
+            </div>
+          </div>
+
+          {/* PILLAR 2: WHERE IT IS (Geospatial Jurisdiction) */}
+          <div
+            className="card"
+            id="jurisdiction-engine-card"
+            style={{
+              background: 'linear-gradient(180deg, #161226 0%, #0f0c1c 100%)',
+              border: '1px solid rgba(139, 92, 246, 0.3)',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+            }}
+          >
             <div>
-              <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#93c5fd', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.75rem' }}>
-                Operational Activity Timeline
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.85rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', color: '#a78bfa', fontWeight: 700, fontSize: '0.82rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  <MapPin size={16} /> Where It Is
+                </div>
+                <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#c4b5fd', background: 'rgba(139, 92, 246, 0.15)', padding: '0.15rem 0.5rem', borderRadius: '4px' }}>
+                  {report.location?.status === 'VERIFIED_COORDINATES' ? 'GPS Verified' : 'Manual Address'}
+                </span>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                {caseTimeline.map((ev, i) => (
-                  <div
-                    key={ev.id || i}
+
+              <div style={{ fontSize: '1.15rem', fontWeight: 700, color: '#ffffff', marginBottom: '0.4rem' }}>
+                {jurisdiction?.jurisdiction_name || 'Mysuru District'}
+              </div>
+
+              <div style={{ fontSize: '0.84rem', color: 'var(--text-muted)', lineHeight: '1.5', marginBottom: '0.85rem' }}>
+                {jurisdiction ? (
+                  <>
+                    Administrative Area: <strong style={{ color: '#e2e8f0' }}>{jurisdiction.jurisdiction_name}</strong>
+                    <br />
+                    Type: {jurisdiction.jurisdiction_type || 'Municipal Ward'}
+                  </>
+                ) : (
+                  <span>Evaluating municipal jurisdiction boundaries...</span>
+                )}
+              </div>
+
+              {report.location?.latitude != null && (
+                <div style={{ fontSize: '0.78rem', color: '#94a3b8', background: 'rgba(0, 0, 0, 0.25)', padding: '0.45rem 0.6rem', borderRadius: '6px', fontFamily: 'monospace' }}>
+                  Coordinates: {Number(report.location.latitude).toFixed(5)}, {Number(report.location.longitude).toFixed(5)}
+                </div>
+              )}
+            </div>
+
+            <div style={{ fontSize: '0.72rem', color: '#64748b', borderTop: '1px solid rgba(255, 255, 255, 0.05)', paddingTop: '0.6rem', marginTop: '0.85rem' }}>
+              Jurisdiction determined spatially through municipal boundary maps.
+            </div>
+          </div>
+
+          {/* PILLAR 3: WHO IS RESPONSIBLE (Authority & Department) */}
+          <div
+            className="card"
+            id="civic-responsibility-card"
+            style={{
+              background: 'linear-gradient(180deg, #0a221a 0%, #061611 100%)',
+              border: '1px solid rgba(16, 185, 129, 0.3)',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+            }}
+          >
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.85rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', color: '#34d399', fontWeight: 700, fontSize: '0.82rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  <Building2 size={16} /> Responsible Authority
+                </div>
+                <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#6ee7b7', background: 'rgba(16, 185, 129, 0.15)', padding: '0.15rem 0.5rem', borderRadius: '4px' }}>
+                  {routing?.decision_source === 'HUMAN_REVIEW' ? 'Staff Adjudicated' : 'Automatically Routed'}
+                </span>
+              </div>
+
+              <div style={{ fontSize: '1.15rem', fontWeight: 700, color: '#ffffff', marginBottom: '0.2rem' }}>
+                {routing?.authority_name || civicCase?.authority_code || 'Mysuru City Corporation'}
+              </div>
+
+              <div style={{ fontSize: '0.88rem', fontWeight: 600, color: '#6ee7b7', marginBottom: '0.6rem' }}>
+                Department: {routing?.department_name || civicCase?.department_name || 'Road Maintenance'}
+              </div>
+
+              <div style={{ fontSize: '0.82rem', color: '#cbd5e1', lineHeight: '1.45', background: 'rgba(0, 0, 0, 0.25)', padding: '0.65rem 0.75rem', borderRadius: '6px', marginBottom: '0.85rem' }}>
+                <span style={{ color: '#a7f3d0', fontWeight: 600, display: 'block', marginBottom: '0.2rem', fontSize: '0.75rem', textTransform: 'uppercase' }}>
+                  Why it was routed here:
+                </span>
+                {routing?.explanation
+                  ? routing.explanation.replace(/rule\s+id\s*:\s*\d+/gi, '').replace(/\(priority:\s*\d+\)/gi, '')
+                  : `Your reported location falls within the current municipal jurisdiction and matches the responsibility for this department.`}
+              </div>
+            </div>
+
+            <div style={{ fontSize: '0.72rem', color: '#64748b', borderTop: '1px solid rgba(255, 255, 255, 0.05)', paddingTop: '0.6rem' }}>
+              Responsibility routed via published city charter governance rules.
+            </div>
+          </div>
+        </div>
+
+        {/* ========================================================================= */}
+        {/* PHASE 8: CITIZEN RESOLUTION VERIFICATION CARD                             */}
+        {/* ========================================================================= */}
+        {(civicCase?.status === 'RESOLVED' || verification) && (
+          <div
+            id="citizen-resolution-verification-card"
+            style={{
+              marginBottom: '1.5rem',
+              borderRadius: 'var(--radius-lg)',
+              padding: '1.5rem',
+              border:
+                verification?.status === 'VERIFIED'
+                  ? '1px solid rgba(16, 185, 129, 0.5)'
+                  : verification?.status === 'DISPUTED'
+                  ? '1px solid rgba(239, 68, 68, 0.5)'
+                  : '1px solid rgba(245, 158, 11, 0.5)',
+              background:
+                verification?.status === 'VERIFIED'
+                  ? 'linear-gradient(180deg, rgba(6, 78, 59, 0.35) 0%, rgba(2, 44, 34, 0.55) 100%)'
+                  : verification?.status === 'DISPUTED'
+                  ? 'linear-gradient(180deg, rgba(127, 29, 29, 0.35) 0%, rgba(69, 10, 10, 0.55) 100%)'
+                  : 'linear-gradient(180deg, rgba(120, 53, 15, 0.3) 0%, rgba(69, 26, 3, 0.5) 100%)',
+              boxShadow: '0 8px 30px rgba(0, 0, 0, 0.25)',
+            }}
+          >
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                {verification?.status === 'VERIFIED' ? (
+                  <ShieldCheck size={26} color="#10b981" />
+                ) : verification?.status === 'DISPUTED' ? (
+                  <AlertTriangle size={26} color="#ef4444" />
+                ) : (
+                  <Clock size={26} color="#f59e0b" />
+                )}
+                <div>
+                  <h3 style={{ fontSize: '1.15rem', fontWeight: 700, margin: 0, color: '#ffffff' }}>
+                    {verification?.status === 'VERIFIED'
+                      ? 'Resolution Independently Verified'
+                      : verification?.status === 'DISPUTED'
+                      ? 'Resolution Disputed by Citizen'
+                      : 'Staff Reported Fixed — Please Verify the Resolution'}
+                  </h3>
+                  <div style={{ fontSize: '0.75rem', color: '#cbd5e1', marginTop: '0.15rem' }}>
+                    Civic Accountability: Cases are only fully closed after the reporting citizen verifies the work.
+                  </div>
+                </div>
+              </div>
+
+              <span
+                style={{
+                  padding: '0.3rem 0.8rem',
+                  borderRadius: '9999px',
+                  fontSize: '0.78rem',
+                  fontWeight: 800,
+                  textTransform: 'uppercase',
+                  background:
+                    verification?.status === 'VERIFIED'
+                      ? 'rgba(16, 185, 129, 0.25)'
+                      : verification?.status === 'DISPUTED'
+                      ? 'rgba(239, 68, 68, 0.25)'
+                      : 'rgba(245, 158, 11, 0.25)',
+                  color:
+                    verification?.status === 'VERIFIED'
+                      ? '#6ee7b7'
+                      : verification?.status === 'DISPUTED'
+                      ? '#fca5a5'
+                      : '#fcd34d',
+                  border: `1px solid ${
+                    verification?.status === 'VERIFIED'
+                      ? '#10b981'
+                      : verification?.status === 'DISPUTED'
+                      ? '#ef4444'
+                      : '#f59e0b'
+                  }`,
+                }}
+              >
+                {verification?.status || 'PENDING VERIFICATION'}
+              </span>
+            </div>
+
+            {/* Banners for actions */}
+            {verificationActionError && (
+              <div style={{ padding: '0.75rem', borderRadius: '6px', background: 'rgba(239, 68, 68, 0.2)', border: '1px solid #ef4444', color: '#fca5a5', fontSize: '0.85rem', marginBottom: '1rem' }}>
+                {verificationActionError}
+              </div>
+            )}
+            {verificationActionSuccess && (
+              <div style={{ padding: '0.75rem', borderRadius: '6px', background: 'rgba(16, 185, 129, 0.2)', border: '1px solid #10b981', color: '#6ee7b7', fontSize: '0.85rem', marginBottom: '1rem' }}>
+                {verificationActionSuccess}
+              </div>
+            )}
+
+            {/* Staff Resolution Notes & Attached Evidence */}
+            <div style={{ background: 'rgba(0, 0, 0, 0.35)', padding: '1.15rem', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.08)', marginBottom: '1rem' }}>
+              <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: 700, color: '#94a3b8', letterSpacing: '0.05em', marginBottom: '0.4rem' }}>
+                Municipal Staff Completion Note
+              </div>
+              <div style={{ fontSize: '0.95rem', color: '#e2e8f0', lineHeight: 1.5 }}>
+                &ldquo;{verification?.resolution_note || civicCase?.resolution_notes || 'Remediation completed by field team.'}&rdquo;
+              </div>
+
+              {(verificationEvidence?.media_url || civicCase?.latest_evidence?.media_url) && (
+                <div style={{ marginTop: '0.85rem' }}>
+                  <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.4rem' }}>
+                    Staff Work Completion Photo:
+                  </div>
+                  <img
+                    src={verificationEvidence?.media_url || civicCase?.latest_evidence?.media_url}
+                    alt="Staff Completion Evidence"
                     style={{
-                      display: 'flex',
-                      alignItems: 'baseline',
-                      gap: '0.75rem',
-                      fontSize: '0.82rem',
-                      color: 'var(--text-secondary)',
-                      padding: '0.4rem 0.6rem',
+                      maxHeight: '220px',
                       borderRadius: '6px',
-                      background: 'rgba(255, 255, 255, 0.02)',
-                    }}
-                  >
-                    <span style={{ fontFamily: 'monospace', color: '#64748b', fontSize: '0.75rem', flexShrink: 0 }}>
-                      {new Date(ev.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                    <span style={{ fontWeight: 600, color: '#e2e8f0' }}>
-                      {ev.event_type.replace(/_/g, ' ')}
-                    </span>
-                    {ev.note && <span style={{ color: '#94a3b8' }}>— {ev.note}</span>}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* ========================================================================= */}
-        {/* PHASE 4: LOCATION & ADMINISTRATIVE JURISDICTION ENGINE                     */}
-        {/* ========================================================================= */}
-        <div
-          className="card"
-          id="jurisdiction-engine-card"
-          style={{
-            marginBottom: '1.5rem',
-            border: '1px solid #8b5cf6',
-            background: 'linear-gradient(180deg, #18112e 0%, #0f0c1d 100%)',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-              <Layers size={22} color="#a78bfa" />
-              <div>
-                <h3 style={{ fontSize: '1.2rem', color: '#fff' }}>Geospatial & Administrative Jurisdiction</h3>
-                <span style={{ fontSize: '0.75rem', color: '#c4b5fd' }}>
-                  PostGIS ST_Covers point-in-polygon • Temporal boundary versioning
-                </span>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              {jurisdiction && (
-                <span
-                  id="jurisdiction-match-badge"
-                  style={{
-                    padding: '0.25rem 0.65rem',
-                    borderRadius: 'var(--radius-full)',
-                    fontSize: '0.75rem',
-                    fontWeight: 700,
-                    textTransform: 'uppercase',
-                    background:
-                      jurisdiction.match_status === 'MATCHED'
-                        ? 'rgba(16, 185, 129, 0.2)'
-                        : jurisdiction.match_status === 'NO_JURISDICTION_MATCH'
-                        ? 'rgba(234, 179, 8, 0.2)'
-                        : 'rgba(239, 68, 68, 0.2)',
-                    color:
-                      jurisdiction.match_status === 'MATCHED'
-                        ? '#6ee7b7'
-                        : jurisdiction.match_status === 'NO_JURISDICTION_MATCH'
-                        ? '#fde047'
-                        : '#fca5a5',
-                    border: `1px solid ${
-                      jurisdiction.match_status === 'MATCHED'
-                        ? '#10b981'
-                        : jurisdiction.match_status === 'NO_JURISDICTION_MATCH'
-                        ? '#eab308'
-                        : '#ef4444'
-                    }`,
-                  }}
-                >
-                  {jurisdiction.match_status === 'MATCHED' && '✓ MATCHED'}
-                  {jurisdiction.match_status === 'NO_JURISDICTION_MATCH' && '⚠ NO JURISDICTION MATCH'}
-                  {jurisdiction.match_status === 'JURISDICTION_CONFLICT' && '✕ JURISDICTION CONFLICT'}
-                </span>
-              )}
-
-              {report?.location?.status === 'VERIFIED_COORDINATES' && (
-                <button
-                  onClick={handleResolveJurisdiction}
-                  disabled={resolvingJur}
-                  className="btn btn-secondary btn-sm"
-                  style={{ fontSize: '0.75rem', padding: '0.25rem 0.6rem' }}
-                  title="Re-run spatial resolution"
-                >
-                  <RefreshCw size={12} className={resolvingJur ? 'spin' : ''} />
-                  {resolvingJur ? 'Resolving...' : 'Re-resolve'}
-                </button>
-              )}
-            </div>
-          </div>
-
-          {jurisdiction ? (
-            <div>
-              {/* Jurisdiction Details Grid */}
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-                  gap: '0.75rem',
-                  marginBottom: '1rem',
-                }}
-              >
-                <div style={{ background: 'rgba(0,0,0,0.25)', padding: '0.75rem', borderRadius: 'var(--radius-md)', border: '1px solid rgba(255,255,255,0.06)' }}>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Jurisdiction Name</div>
-                  <div style={{ fontSize: '1.05rem', fontWeight: 600, color: '#fff', marginTop: '0.2rem' }}>
-                    {jurisdiction.jurisdiction_name || 'Unincorporated / Unassigned'}
-                  </div>
-                </div>
-
-                <div style={{ background: 'rgba(0,0,0,0.25)', padding: '0.75rem', borderRadius: 'var(--radius-md)', border: '1px solid rgba(255,255,255,0.06)' }}>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Administrative Type</div>
-                  <div style={{ fontSize: '1rem', fontWeight: 600, color: '#c4b5fd', marginTop: '0.2rem' }}>
-                    {jurisdiction.jurisdiction_type || 'N/A'}
-                  </div>
-                </div>
-
-                <div style={{ background: 'rgba(0,0,0,0.25)', padding: '0.75rem', borderRadius: 'var(--radius-md)', border: '1px solid rgba(255,255,255,0.06)' }}>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Boundary Version</div>
-                  <div style={{ fontSize: '1rem', fontWeight: 600, color: '#a78bfa', marginTop: '0.2rem', fontFamily: 'monospace' }}>
-                    {jurisdiction.jurisdiction_version || 'N/A'}
-                  </div>
-                </div>
-
-                <div style={{ background: 'rgba(0,0,0,0.25)', padding: '0.75rem', borderRadius: 'var(--radius-md)', border: '1px solid rgba(255,255,255,0.06)' }}>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Match Method</div>
-                  <div style={{ fontSize: '0.88rem', fontWeight: 500, color: '#94a3b8', marginTop: '0.2rem', fontFamily: 'monospace' }}>
-                    {jurisdiction.match_method}
-                  </div>
-                </div>
-              </div>
-
-              {/* Conflict Advisory if Overlapping Boundaries */}
-              {jurisdiction.match_status === 'JURISDICTION_CONFLICT' && (
-                <div
-                  style={{
-                    background: 'rgba(239, 68, 68, 0.12)',
-                    border: '1px solid rgba(239, 68, 68, 0.3)',
-                    borderRadius: 'var(--radius-md)',
-                    padding: '1rem',
-                    marginBottom: '1rem',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#fca5a5', fontWeight: 600, marginBottom: '0.5rem' }}>
-                    <AlertTriangle size={16} />
-                    <span>Overlapping Administrative Boundaries Detected ({jurisdiction.candidate_matches?.length || 0} Candidate Jurisdictions)</span>
-                  </div>
-                  <p style={{ fontSize: '0.82rem', color: '#fca5a5', marginBottom: '0.75rem' }}>
-                    The report coordinates fall inside multiple intersecting administrative polygons simultaneously. This report requires manual jurisdiction adjudication.
-                  </p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                    {(jurisdiction.candidate_matches || []).map((cand, idx) => (
-                      <div
-                        key={idx}
-                        style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          background: 'rgba(0,0,0,0.3)',
-                          padding: '0.5rem 0.75rem',
-                          borderRadius: 'var(--radius-sm)',
-                          fontSize: '0.82rem',
-                        }}
-                      >
-                        <span style={{ fontWeight: 600, color: '#fff' }}>{cand.jurisdiction_name}</span>
-                        <span style={{ color: '#cbd5e1', fontSize: '0.75rem', fontFamily: 'monospace' }}>
-                          {cand.jurisdiction_type} • {cand.version}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* No Match Advisory */}
-              {jurisdiction.match_status === 'NO_JURISDICTION_MATCH' && (
-                <div
-                  style={{
-                    background: 'rgba(234, 179, 8, 0.12)',
-                    border: '1px solid rgba(234, 179, 8, 0.3)',
-                    borderRadius: 'var(--radius-md)',
-                    padding: '0.75rem 1rem',
-                    marginBottom: '1rem',
-                    fontSize: '0.84rem',
-                    color: '#fde047',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.5rem',
-                  }}
-                >
-                  <AlertCircle size={16} style={{ flexShrink: 0 }} />
-                  <div>
-                    <strong>Boundary Gap:</strong> Coordinates fall outside all registered administrative polygons for the report timestamp. Flagged for manual boundary review.
-                  </div>
-                </div>
-              )}
-
-              {/* Explanation Note */}
-              <div
-                style={{
-                  fontSize: '0.85rem',
-                  color: 'var(--text-muted)',
-                  lineHeight: '1.5',
-                  padding: '0.75rem',
-                  background: 'rgba(0,0,0,0.2)',
-                  borderRadius: 'var(--radius-md)',
-                  borderLeft: '3px solid #8b5cf6',
-                }}
-              >
-                {jurisdiction.explanation}
-              </div>
-
-              {/* Scope Boundary Notice */}
-              <div style={{ marginTop: '0.75rem', fontSize: '0.75rem', color: 'var(--text-faint)' }}>
-                ℹ Phase 4 determines spatial administrative coverage. Department responsibility rules (MCC vs Panchayat) are computed in Phase 5.
-              </div>
-            </div>
-          ) : (
-            <div style={{ textAlign: 'center', padding: '1.25rem 0', color: 'var(--text-muted)', fontSize: '0.88rem' }}>
-              {report?.location?.status === 'VERIFIED_COORDINATES' ? (
-                <div>
-                  No jurisdiction snapshot recorded yet.
-                  <div style={{ marginTop: '0.5rem' }}>
-                    <button
-                      onClick={handleResolveJurisdiction}
-                      disabled={resolvingJur}
-                      className="btn btn-secondary btn-sm"
-                    >
-                      <Compass size={14} /> Resolve Jurisdiction Now
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                'Location coordinates were not provided with this report. Administrative jurisdiction cannot be resolved spatially.'
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* ========================================================================= */}
-        {/* PHASE 3: AI ISSUE UNDERSTANDING CARD                                     */}
-        {/* ========================================================================= */}
-        <div className="card" style={{ marginBottom: '1.5rem', border: '1px solid #3b82f6', background: 'linear-gradient(180deg, #111a2e 0%, #0d1322 100%)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-              <Sparkles size={22} color="#60a5fa" />
-              <div>
-                <h3 style={{ fontSize: '1.2rem', color: '#fff' }}>AI Issue Understanding</h3>
-                <span style={{ fontSize: '0.75rem', color: '#93c5fd' }}>
-                  AI-assisted analysis (Decision Support Only • Does not assign authority)
-                </span>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              {analysis && (
-                <span
-                  style={{
-                    padding: '0.25rem 0.65rem',
-                    borderRadius: 'var(--radius-full)',
-                    fontSize: '0.75rem',
-                    fontWeight: 700,
-                    textTransform: 'uppercase',
-                    background:
-                      analysis.status === 'COMPLETED'
-                        ? 'rgba(16, 185, 129, 0.2)'
-                        : analysis.status === 'NEEDS_REVIEW'
-                        ? 'rgba(234, 179, 8, 0.2)'
-                        : 'rgba(239, 68, 68, 0.2)',
-                    color:
-                      analysis.status === 'COMPLETED'
-                        ? '#6ee7b7'
-                        : analysis.status === 'NEEDS_REVIEW'
-                        ? '#fde047'
-                        : '#fca5a5',
-                    border: `1px solid ${
-                      analysis.status === 'COMPLETED'
-                        ? '#10b981'
-                        : analysis.status === 'NEEDS_REVIEW'
-                        ? '#eab308'
-                        : '#ef4444'
-                    }`,
-                  }}
-                >
-                  {analysis.status}
-                </span>
-              )}
-
-              <button
-                onClick={() => handleTriggerAnalysis(role === 'ADMIN')}
-                className="btn btn-outline btn-sm"
-                disabled={analyzing}
-                id="btn-trigger-ai-analysis"
-                title={role === 'ADMIN' ? 'Force reprocess analysis' : 'Refresh / analyze'}
-              >
-                <RefreshCw size={13} className={analyzing ? 'spinner' : ''} />
-                {analyzing ? 'Analyzing...' : analysis ? 'Re-analyze' : 'Run AI Analysis'}
-              </button>
-            </div>
-          </div>
-
-          {analysisError && (
-            <div className="alert alert-error" style={{ marginBottom: '1rem', fontSize: '0.85rem' }}>
-              <AlertCircle size={16} style={{ flexShrink: 0 }} />
-              <div>{analysisError}</div>
-            </div>
-          )}
-
-          {analysis ? (
-            <div>
-              {/* Category Comparison: AI vs Citizen */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
-                <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.85rem 1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem', textTransform: 'uppercase' }}>
-                    🤖 AI Predicted Category
-                  </div>
-                  <div style={{ fontSize: '1.05rem', fontWeight: 700, color: '#60a5fa' }}>
-                    {analysis.category}
-                  </div>
-                </div>
-
-                <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.85rem 1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem', textTransform: 'uppercase' }}>
-                    👤 Citizen-Reported Category
-                  </div>
-                  <div style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-main)' }}>
-                    {report.category}
-                  </div>
-                </div>
-
-                <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.85rem 1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem', textTransform: 'uppercase' }}>
-                    ⚠️ Estimated Severity
-                  </div>
-                  {(() => {
-                    const colors = getSeverityBadgeColor(analysis.severity);
-                    return (
-                      <div
-                        style={{
-                          display: 'inline-block',
-                          padding: '0.15rem 0.55rem',
-                          borderRadius: 'var(--radius-sm)',
-                          fontSize: '0.9rem',
-                          fontWeight: 800,
-                          background: colors.bg,
-                          color: colors.text,
-                          border: `1px solid ${colors.border}`,
-                        }}
-                      >
-                        {analysis.severity}
-                      </div>
-                    );
-                  })()}
-                </div>
-              </div>
-
-              {/* Summary */}
-              <div style={{ marginBottom: '1rem' }}>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  Factual Summary
-                </div>
-                <div style={{ fontSize: '0.95rem', color: '#e2e8f0', background: 'var(--bg-primary)', padding: '0.85rem 1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
-                  {analysis.summary}
-                </div>
-              </div>
-
-              {/* Risk Factors */}
-              {Array.isArray(analysis.risk_factors) && analysis.risk_factors.length > 0 && (
-                <div style={{ marginBottom: '1.25rem' }}>
-                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                    Identified Public Risk Factors
-                  </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.45rem' }}>
-                    {analysis.risk_factors.map((risk, idx) => (
-                      <span
-                        key={idx}
-                        style={{
-                          background: 'rgba(239, 68, 68, 0.1)',
-                          color: '#fca5a5',
-                          border: '1px solid rgba(239, 68, 68, 0.25)',
-                          padding: '0.2rem 0.6rem',
-                          borderRadius: 'var(--radius-full)',
-                          fontSize: '0.78rem',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '0.3rem',
-                        }}
-                      >
-                        <AlertTriangle size={12} />
-                        {risk}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Confidence Score */}
-              <div style={{ marginBottom: '0.5rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.3rem' }}>
-                  <span>Model Confidence</span>
-                  <span style={{ fontWeight: 700, color: analysis.confidence >= 0.7 ? 'var(--status-200)' : 'var(--status-401)' }}>
-                    {Math.round(analysis.confidence * 100)}% ({analysis.confidence})
-                  </span>
-                </div>
-                <div style={{ width: '100%', height: '6px', background: 'rgba(255,255,255,0.1)', borderRadius: 'var(--radius-full)', overflow: 'hidden' }}>
-                  <div
-                    style={{
-                      width: `${Math.round(analysis.confidence * 100)}%`,
-                      height: '100%',
-                      background: analysis.confidence >= 0.7 ? 'var(--status-200)' : 'var(--status-401)',
-                      transition: 'width 0.4s ease',
+                      border: '1px solid rgba(255, 255, 255, 0.15)',
+                      objectFit: 'cover',
                     }}
                   />
                 </div>
-              </div>
+              )}
+            </div>
 
-              {/* Notice for Needs Review */}
-              {analysis.status === 'NEEDS_REVIEW' && (
-                <div className="alert alert-info" style={{ marginTop: '1rem', fontSize: '0.8rem', background: 'rgba(245, 158, 11, 0.12)', borderColor: 'rgba(245, 158, 11, 0.3)', color: '#fde047' }}>
-                  <Info size={16} style={{ flexShrink: 0 }} />
-                  <div>
-                    <strong>Human Review Advisory:</strong> The AI confidence score is below the 70% threshold. This report requires manual verification before final automated case creation.
+            {/* Citizen Dispute View */}
+            {verification?.status === 'DISPUTED' && (
+              <div style={{ background: 'rgba(239, 68, 68, 0.15)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(239, 68, 68, 0.3)', marginBottom: '1rem' }}>
+                <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: 700, color: '#fca5a5', letterSpacing: '0.05em', marginBottom: '0.35rem' }}>
+                  Citizen Dispute Explanation
+                </div>
+                <div style={{ fontSize: '0.92rem', color: '#fee2e2', fontStyle: 'italic', lineHeight: 1.5 }}>
+                  &ldquo;{verification.dispute_reason}&rdquo;
+                </div>
+                <div style={{ fontSize: '0.75rem', color: '#f87171', marginTop: '0.5rem' }}>
+                  Municipal staff have been alerted to reinvestigate and perform rework on site.
+                </div>
+              </div>
+            )}
+
+            {/* Citizen Confirmed View */}
+            {verification?.status === 'VERIFIED' && (
+              <div style={{ background: 'rgba(16, 185, 129, 0.15)', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid rgba(16, 185, 129, 0.3)', marginBottom: '0.5rem' }}>
+                <div style={{ fontSize: '0.9rem', color: '#6ee7b7', fontWeight: 600 }}>
+                  ✓ You confirmed that this problem is fully resolved. Case is closed with full civic accountability.
+                </div>
+              </div>
+            )}
+
+            {/* Action Buttons for Pending Verification */}
+            {verification?.status === 'PENDING' && (
+              <div>
+                <p style={{ fontSize: '0.88rem', color: '#fcd34d', margin: '0 0 1rem 0', lineHeight: 1.5 }}>
+                  Please inspect the location. Did the municipal team satisfactorily fix the reported problem?
+                </p>
+                <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  <button
+                    id="btn-confirm-verification"
+                    onClick={handleConfirmVerification}
+                    disabled={confirmingVerification}
+                    className="btn"
+                    style={{
+                      background: '#059669',
+                      color: '#ffffff',
+                      fontWeight: 700,
+                      fontSize: '0.9rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.45rem',
+                      padding: '0.65rem 1.25rem',
+                    }}
+                  >
+                    <Check size={16} />
+                    {confirmingVerification ? 'Confirming...' : 'Yes, It Is Fixed'}
+                  </button>
+
+                  <button
+                    id="btn-dispute-verification"
+                    onClick={() => setShowDisputeModal(true)}
+                    disabled={confirmingVerification}
+                    className="btn"
+                    style={{
+                      background: '#dc2626',
+                      color: '#ffffff',
+                      fontWeight: 700,
+                      fontSize: '0.9rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.45rem',
+                      padding: '0.65rem 1.25rem',
+                    }}
+                  >
+                    <AlertTriangle size={16} />
+                    No, Issue Still Exists
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* CASE ACTIVITY TIMELINE                                                    */}
+        {/* ========================================================================= */}
+        <div className="card" style={{ marginBottom: '1.5rem' }}>
+          <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-main)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <History size={16} color="#60a5fa" /> Activity Timeline
+          </div>
+
+          {caseTimeline && caseTimeline.length > 0 ? (
+            <div className="timeline-stream" style={{ margin: '0.5rem 0 0.5rem 0.5rem' }}>
+              {caseTimeline.map((ev, idx) => (
+                <div key={ev.id || idx} className="timeline-node">
+                  <div className="timeline-dot"></div>
+                  <div className="timeline-content">
+                    <div className="timeline-header">
+                      <span className="timeline-actor">
+                        {formatEventName(ev.event_type)}
+                      </span>
+                      <span className="timeline-time">
+                        {new Date(ev.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} at{' '}
+                        {new Date(ev.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                    {ev.note && (
+                      <div className="timeline-body">
+                        {ev.note}
+                      </div>
+                    )}
                   </div>
                 </div>
-              )}
+              ))}
             </div>
           ) : (
             <div style={{ textAlign: 'center', padding: '1.5rem 0', color: 'var(--text-muted)', fontSize: '0.88rem' }}>
-              AI analysis has not yet been processed for this report.
-              <div style={{ marginTop: '0.75rem' }}>
-                <button
-                  onClick={() => handleTriggerAnalysis(false)}
-                  className="btn btn-primary btn-sm"
-                  disabled={analyzing}
-                  id="btn-run-first-ai-analysis"
-                >
-                  <Sparkles size={14} /> Run AI Understanding Now
-                </button>
-              </div>
+              Case has been submitted and is currently moving through the civic workflow.
             </div>
           )}
         </div>
 
         {/* ========================================================================= */}
-        {/* PHASE 5: CIVIC RESPONSIBILITY & AUTHORITY ROUTING CARD                   */}
+        {/* STAFF ADJUDICATION & ADMIN TOOLS (STAFF / ADMIN ONLY)                      */}
         {/* ========================================================================= */}
-        <div
-          className="card"
-          id="civic-responsibility-card"
-          style={{
-            marginBottom: '1.5rem',
-            border: '1px solid #10b981',
-            background: 'linear-gradient(180deg, #09261d 0%, #061812 100%)',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-              <Building2 size={22} color="#34d399" />
-              <div>
-                <h3 style={{ fontSize: '1.2rem', color: '#fff' }}>Civic Responsibility & Authority Routing</h3>
-                <span style={{ fontSize: '0.75rem', color: '#a7f3d0' }}>
-                  Dynamic Rule Engine • Versioned policy mapping WHERE + WHAT + WHEN &rarr; WHO
-                </span>
+        {(role === 'STAFF' || role === 'ADMIN') && (
+          <div
+            className="card"
+            style={{
+              background: 'rgba(15, 23, 42, 0.65)',
+              border: '1px solid rgba(245, 158, 11, 0.4)',
+              marginBottom: '1.5rem',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#fcd34d', fontWeight: 700, fontSize: '0.95rem' }}>
+                <Edit3 size={18} /> Staff Adjudication & Administrative Tools
               </div>
+              <span style={{ fontSize: '0.75rem', color: '#f59e0b', background: 'rgba(245, 158, 11, 0.15)', padding: '0.2rem 0.6rem', borderRadius: '4px' }}>
+                Staff View Only
+              </span>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              {routing && (
-                <span
-                  id="routing-status-badge"
-                  style={{
-                    padding: '0.25rem 0.65rem',
-                    borderRadius: 'var(--radius-full)',
-                    fontSize: '0.75rem',
-                    fontWeight: 700,
-                    textTransform: 'uppercase',
-                    background:
-                      routing.decision_source === 'HUMAN_REVIEW'
-                        ? 'rgba(59, 130, 246, 0.2)'
-                        : (routing.routing_status === 'AUTO_ROUTED' || routing.route_status === 'ROUTED')
-                        ? 'rgba(16, 185, 129, 0.2)'
-                        : (routing.routing_status === 'NEEDS_REVIEW' || routing.route_status === 'NEEDS_REVIEW')
-                        ? 'rgba(245, 158, 11, 0.2)'
-                        : 'rgba(239, 68, 68, 0.2)',
-                    color:
-                      routing.decision_source === 'HUMAN_REVIEW'
-                        ? '#93c5fd'
-                        : (routing.routing_status === 'AUTO_ROUTED' || routing.route_status === 'ROUTED')
-                        ? '#6ee7b7'
-                        : (routing.routing_status === 'NEEDS_REVIEW' || routing.route_status === 'NEEDS_REVIEW')
-                        ? '#fde047'
-                        : '#fca5a5',
-                    border: `1px solid ${
-                      routing.decision_source === 'HUMAN_REVIEW'
-                        ? '#3b82f6'
-                        : (routing.routing_status === 'AUTO_ROUTED' || routing.route_status === 'ROUTED')
-                        ? '#10b981'
-                        : (routing.routing_status === 'NEEDS_REVIEW' || routing.route_status === 'NEEDS_REVIEW')
-                        ? '#f59e0b'
-                        : '#ef4444'
-                    }`,
-                  }}
-                >
-                  {routing.decision_source === 'HUMAN_REVIEW' && '✓ HUMAN ADJUDICATED'}
-                  {routing.decision_source !== 'HUMAN_REVIEW' && (routing.routing_status === 'AUTO_ROUTED' || routing.route_status === 'ROUTED') && '✓ AUTO ROUTED'}
-                  {routing.decision_source !== 'HUMAN_REVIEW' && (routing.routing_status === 'NEEDS_REVIEW' || routing.route_status === 'NEEDS_REVIEW') && '⚡ REQUIRES HUMAN REVIEW'}
-                  {routing.routing_status === 'ROUTING_FAILED' && '✕ ROUTING FAILED'}
-                  {!routing.routing_status && routing.route_status === 'NO_RESPONSIBLE_RULE' && '⚠ NO RESPONSIBLE RULE'}
-                  {!routing.routing_status && routing.route_status === 'RESPONSIBILITY_CONFLICT' && '✕ RESPONSIBILITY CONFLICT'}
-                </span>
-              )}
-
-              <button
-                onClick={handleResolveRouting}
-                disabled={resolvingRouting}
-                className="btn btn-secondary btn-sm"
-                id="btn-re-resolve-routing"
-                style={{ fontSize: '0.75rem', padding: '0.25rem 0.6rem' }}
-                title="Re-run responsibility rule evaluation"
-              >
-                <RefreshCw size={12} className={resolvingRouting ? 'spin' : ''} />
-                {resolvingRouting ? 'Resolving...' : 'Re-route'}
-              </button>
-            </div>
-          </div>
-
-          {routing ? (
-            <div>
-              {/* Operational Assignment Grid */}
+            {/* Inline Staff Adjudication Form (if NEEDS_REVIEW) */}
+            {routing?.routing_status === 'NEEDS_REVIEW' && (
               <div
+                id="staff-inline-review-box"
                 style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-                  gap: '0.75rem',
+                  background: 'rgba(0, 0, 0, 0.3)',
+                  border: '1px solid rgba(245, 158, 11, 0.3)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '1.25rem',
                   marginBottom: '1rem',
                 }}
               >
-                <div style={{ background: 'rgba(0,0,0,0.28)', padding: '0.85rem', borderRadius: 'var(--radius-md)', border: '1px solid rgba(255,255,255,0.06)' }}>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Responsible Authority</div>
-                  <div style={{ fontSize: '1.05rem', fontWeight: 700, color: '#fff', marginTop: '0.2rem' }}>
-                    {routing.authority_name || 'Unassigned'}
-                  </div>
-                  {routing.authority_code && (
-                    <div style={{ fontSize: '0.75rem', color: '#6ee7b7', fontFamily: 'monospace', marginTop: '0.15rem' }}>
-                      {routing.authority_code} • {routing.authority_type || 'Civic Body'}
-                    </div>
-                  )}
-                </div>
-
-                <div style={{ background: 'rgba(0,0,0,0.28)', padding: '0.85rem', borderRadius: 'var(--radius-md)', border: '1px solid rgba(255,255,255,0.06)' }}>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Operational Department</div>
-                  <div style={{ fontSize: '1.05rem', fontWeight: 700, color: '#a7f3d0', marginTop: '0.2rem' }}>
-                    {routing.department_name || 'Unassigned'}
-                  </div>
-                  {routing.department_code && (
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'monospace', marginTop: '0.15rem' }}>
-                      Dept Code: {routing.department_code}
-                    </div>
-                  )}
-                </div>
-
-                <div style={{ background: 'rgba(0,0,0,0.28)', padding: '0.85rem', borderRadius: 'var(--radius-md)', border: '1px solid rgba(255,255,255,0.06)' }}>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Policy Rule Version</div>
-                  <div style={{ fontSize: '1rem', fontWeight: 600, color: '#34d399', marginTop: '0.2rem', fontFamily: 'monospace' }}>
-                    {routing.rule_version || 'N/A'}
-                  </div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
-                    Method: {routing.match_method}
-                  </div>
-                </div>
-
-                <div style={{ background: 'rgba(0,0,0,0.28)', padding: '0.85rem', borderRadius: 'var(--radius-md)', border: '1px solid rgba(255,255,255,0.06)' }}>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Routed Issue Category</div>
-                  <div style={{ fontSize: '1rem', fontWeight: 600, color: '#60a5fa', marginTop: '0.2rem' }}>
-                    {routing.issue_category_used || report.category}
-                  </div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
-                    Source: {routing.category_source === 'AI_ANALYSIS' ? 'AI Understanding' : 'Citizen Submission'}
-                  </div>
-                </div>
-              </div>
-
-              {/* Responsibility Conflict Box */}
-              {routing.route_status === 'RESPONSIBILITY_CONFLICT' && (
-                <div
-                  style={{
-                    background: 'rgba(239, 68, 68, 0.12)',
-                    border: '1px solid rgba(239, 68, 68, 0.3)',
-                    borderRadius: 'var(--radius-md)',
-                    padding: '1rem',
-                    marginBottom: '1rem',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#fca5a5', fontWeight: 600, marginBottom: '0.5rem' }}>
-                    <AlertTriangle size={16} />
-                    <span>Competing Administrative Responsibilities ({routing.candidate_rules?.length || 0} Matching Rules)</span>
-                  </div>
-                  <p style={{ fontSize: '0.82rem', color: '#fca5a5', marginBottom: '0.75rem' }}>
-                    Multiple rules with identical priority match this issue in this jurisdiction. CivicFlow refuses to make an arbitrary guess. Flagged for administrative assignment.
-                  </p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                    {(routing.candidate_rules || []).map((cand, idx) => (
-                      <div
-                        key={idx}
-                        style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          background: 'rgba(0,0,0,0.3)',
-                          padding: '0.5rem 0.75rem',
-                          borderRadius: 'var(--radius-sm)',
-                          fontSize: '0.82rem',
-                        }}
-                      >
-                        <span style={{ fontWeight: 600, color: '#fff' }}>
-                          {cand.authority_name} &bull; {cand.department_name}
-                        </span>
-                        <span style={{ color: '#cbd5e1', fontSize: '0.75rem', fontFamily: 'monospace' }}>
-                          Rule {cand.rule_version} (Priority: {cand.priority})
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* No Responsible Rule Box */}
-              {routing.route_status === 'NO_RESPONSIBLE_RULE' && (
-                <div
-                  style={{
-                    background: 'rgba(234, 179, 8, 0.12)',
-                    border: '1px solid rgba(234, 179, 8, 0.3)',
-                    borderRadius: 'var(--radius-md)',
-                    padding: '0.75rem 1rem',
-                    marginBottom: '1rem',
-                    fontSize: '0.84rem',
-                    color: '#fde047',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.5rem',
-                  }}
-                >
-                  <AlertCircle size={16} style={{ flexShrink: 0 }} />
-                  <div>
-                    <strong>Unmapped Civic Problem:</strong> No responsibility rule covers category &apos;{routing.issue_category_used}&apos; in this jurisdiction at the report timestamp. Flagged for administrative allocation.
-                  </div>
-                </div>
-              )}
-
-              {/* AI Uncertainty Notice */}
-              {routing.route_status === 'NEEDS_REVIEW' && (
-                <div
-                  style={{
-                    background: 'rgba(168, 85, 247, 0.12)',
-                    border: '1px solid rgba(168, 85, 247, 0.3)',
-                    borderRadius: 'var(--radius-md)',
-                    padding: '0.75rem 1rem',
-                    marginBottom: '1rem',
-                    fontSize: '0.84rem',
-                    color: '#d8b4fe',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.5rem',
-                  }}
-                >
-                  <Info size={16} style={{ flexShrink: 0 }} />
-                  <div>
-                    <strong>Provisional Authority Route:</strong> Routed to {routing.authority_name} ({routing.department_name}), but marked for human verification because AI issue confidence was below 70%.
-                  </div>
-                </div>
-              )}
-
-              {/* Explainability Summary Box */}
-              <div
-                style={{
-                  fontSize: '0.85rem',
-                  color: 'var(--text-muted)',
-                  lineHeight: '1.5',
-                  padding: '0.85rem',
-                  background: 'rgba(0,0,0,0.22)',
-                  borderRadius: 'var(--radius-md)',
-                  borderLeft: '3px solid #10b981',
-                }}
-              >
-                <div style={{ fontSize: '0.72rem', color: '#6ee7b7', textTransform: 'uppercase', fontWeight: 700, marginBottom: '0.35rem', letterSpacing: '0.04em' }}>
-                  Auditable Explainability Trace
-                </div>
-                {routing.explanation}
-              </div>
-
-              {/* Phase 6: Review Reasons (if review required or reasons exist) */}
-              {Array.isArray(routing.review_reasons) && routing.review_reasons.length > 0 && (
-                <div
-                  style={{
-                    marginTop: '1rem',
-                    background: 'rgba(245, 158, 11, 0.12)',
-                    border: '1px solid rgba(245, 158, 11, 0.35)',
-                    borderRadius: 'var(--radius-md)',
-                    padding: '0.85rem 1rem',
-                  }}
-                >
-                  <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#fde047', textTransform: 'uppercase', marginBottom: '0.4rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                    <ShieldAlert size={14} /> Triggered Routing Review Conditions
-                  </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
-                    {routing.review_reasons.map((r, idx) => (
-                      <span
-                        key={idx}
-                        style={{
-                          background: 'rgba(0,0,0,0.3)',
-                          color: '#fef08a',
-                          padding: '0.2rem 0.55rem',
-                          borderRadius: 'var(--radius-sm)',
-                          fontSize: '0.75rem',
-                          fontFamily: 'monospace',
-                          border: '1px solid rgba(245, 158, 11, 0.3)',
-                        }}
-                      >
-                        {r}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Phase 6: Human Adjudication Audit Banner (if decision_source === 'HUMAN_REVIEW') */}
-              {routing.decision_source === 'HUMAN_REVIEW' && (
-                <div
-                  style={{
-                    marginTop: '1rem',
-                    background: 'rgba(59, 130, 246, 0.12)',
-                    border: '1px solid rgba(59, 130, 246, 0.35)',
-                    borderRadius: 'var(--radius-md)',
-                    padding: '1rem',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: '#93c5fd', fontWeight: 700, fontSize: '0.85rem' }}>
-                      <UserCheck size={16} /> Human Review Adjudication Record
-                    </div>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                      {routing.reviewed_at ? new Date(routing.reviewed_at).toLocaleString() : 'Recently'}
-                    </span>
-                  </div>
-
-                  <div style={{ fontSize: '0.82rem', color: '#e2e8f0', marginBottom: '0.5rem' }}>
-                    <strong>Reviewer ID:</strong> <span style={{ fontFamily: 'monospace' }}>{routing.reviewed_by}</span>
-                  </div>
-
-                  {routing.review_notes && (
-                    <div style={{ fontSize: '0.82rem', color: '#cbd5e1', background: 'rgba(0,0,0,0.25)', padding: '0.6rem 0.8rem', borderRadius: 'var(--radius-sm)', marginBottom: '0.5rem' }}>
-                      <strong>Staff Justification:</strong> &ldquo;{routing.review_notes}&rdquo;
-                    </div>
-                  )}
-
-                  <div style={{ fontSize: '0.78rem', color: '#93c5fd', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <span>Original Route: {routing.authority_code || 'None'}</span>
-                    <span>&rarr;</span>
-                    <strong>Final Route: {routing.final_authority_name || routing.authority_name} ({routing.final_department_name || routing.department_name})</strong>
-                  </div>
-                </div>
-              )}
-
-              {/* Phase 6: Inline Staff Adjudication Action Form (STAFF / ADMIN ONLY when NEEDS_REVIEW) */}
-              {(role === 'STAFF' || role === 'ADMIN') && routing.routing_status === 'NEEDS_REVIEW' && (
-                <div
-                  style={{
-                    marginTop: '1.25rem',
-                    background: 'rgba(15, 23, 42, 0.85)',
-                    border: '1px solid rgba(245, 158, 11, 0.5)',
-                    borderRadius: 'var(--radius-md)',
-                    padding: '1.25rem',
-                  }}
-                  id="staff-inline-review-box"
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.85rem' }}>
-                    <Edit3 size={18} color="#f59e0b" />
-                    <h4 style={{ fontSize: '1rem', fontWeight: 700, color: '#fff' }}>
-                      Staff Adjudication Action
-                    </h4>
-                  </div>
-
-                  {/* Mode Toggles */}
-                  <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
-                    <button
-                      type="button"
-                      onClick={() => setReviewMode('APPROVE')}
-                      disabled={!routing.suggested_authority_id && !routing.authority_id}
-                      className={`btn btn-sm ${reviewMode === 'APPROVE' ? 'btn-primary' : 'btn-outline'}`}
-                      id="btn-inline-mode-approve"
-                    >
-                      <Check size={13} /> Approve Suggested Route
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setReviewMode('OVERRIDE')}
-                      className={`btn btn-sm ${reviewMode === 'OVERRIDE' ? 'btn-primary' : 'btn-outline'}`}
-                      id="btn-inline-mode-override"
-                    >
-                      <Edit3 size={13} /> Override / Assign Route
-                    </button>
-                  </div>
-
-                  {/* Override Dropdowns */}
-                  {reviewMode === 'OVERRIDE' && (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1rem' }}>
-                      <div>
-                        <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '0.25rem' }}>
-                          Authority *
-                        </label>
-                        <select
-                          value={selectedAuthorityId}
-                          onChange={(e) => {
-                            setSelectedAuthorityId(e.target.value);
-                            setSelectedDepartmentId('');
-                          }}
-                          className="form-control"
-                          id="inline-select-authority"
-                          style={{ width: '100%', background: 'var(--bg-primary)', color: '#fff', border: '1px solid var(--border-subtle)', padding: '0.5rem', borderRadius: 'var(--radius-sm)' }}
-                        >
-                          <option value="">-- Choose Authority --</option>
-                          {authorities.map((a) => (
-                            <option key={a.id} value={a.id}>
-                              {a.name} ({a.code})
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div>
-                        <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '0.25rem' }}>
-                          Department *
-                        </label>
-                        <select
-                          value={selectedDepartmentId}
-                          onChange={(e) => setSelectedDepartmentId(e.target.value)}
-                          className="form-control"
-                          id="inline-select-department"
-                          style={{ width: '100%', background: 'var(--bg-primary)', color: '#fff', border: '1px solid var(--border-subtle)', padding: '0.5rem', borderRadius: 'var(--radius-sm)' }}
-                        >
-                          <option value="">-- Choose Department --</option>
-                          {departments
-                            .filter((d) => !selectedAuthorityId || d.authority_id === selectedAuthorityId)
-                            .map((d) => (
-                              <option key={d.id} value={d.id}>
-                                {d.name} ({d.code})
-                              </option>
-                            ))}
-                        </select>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Review Notes */}
-                  <div style={{ marginBottom: '1rem' }}>
-                    <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '0.25rem' }}>
-                      Adjudication Notes / Audit Justification
-                    </label>
-                    <input
-                      type="text"
-                      value={reviewNotes}
-                      onChange={(e) => setReviewNotes(e.target.value)}
-                      placeholder="e.g., Confirmed road maintenance authority under MCC..."
-                      className="form-control"
-                      id="inline-input-notes"
-                      style={{ width: '100%', background: 'var(--bg-primary)', color: '#fff', border: '1px solid var(--border-subtle)', padding: '0.5rem', borderRadius: 'var(--radius-sm)' }}
-                    />
-                  </div>
-
-                  {reviewError && (
-                    <div className="alert alert-error" style={{ marginBottom: '0.75rem', fontSize: '0.82rem' }}>
-                      <AlertCircle size={14} />
-                      <div>{reviewError}</div>
-                    </div>
-                  )}
-                  {reviewSuccess && (
-                    <div className="alert alert-success" style={{ marginBottom: '0.75rem', fontSize: '0.82rem' }}>
-                      <CheckCircle2 size={14} />
-                      <div>{reviewSuccess}</div>
-                    </div>
-                  )}
-
+                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
                   <button
                     type="button"
-                    onClick={handleReviewSubmit}
-                    disabled={reviewSubmitting}
-                    className="btn btn-primary btn-sm"
-                    id="btn-inline-submit-review"
+                    onClick={() => setReviewMode('APPROVE')}
+                    disabled={!routing.suggested_authority_id && !routing.authority_id}
+                    className={`btn btn-sm ${reviewMode === 'APPROVE' ? 'btn-primary' : 'btn-outline'}`}
+                    id="btn-inline-mode-approve"
                   >
-                    {reviewSubmitting ? (
-                      <>
-                        <RefreshCw size={13} className="spin" /> Submitting Review...
-                      </>
-                    ) : reviewMode === 'APPROVE' ? (
-                      <>
-                        <Check size={14} /> Confirm Route Approval
-                      </>
-                    ) : (
-                      <>
-                        <Edit3 size={14} /> Confirm Route Override
-                      </>
-                    )}
+                    <Check size={13} /> Approve Suggested Route
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setReviewMode('OVERRIDE')}
+                    className={`btn btn-sm ${reviewMode === 'OVERRIDE' ? 'btn-primary' : 'btn-outline'}`}
+                    id="btn-inline-mode-override"
+                  >
+                    <Edit3 size={13} /> Override / Assign Route
                   </button>
                 </div>
-              )}
 
-              {/* Review History Audit Trail */}
-              {Array.isArray(reviewsHistory) && reviewsHistory.length > 0 && (
-                <div style={{ marginTop: '1.25rem', borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '1rem' }}>
-                  <div style={{ fontSize: '0.75rem', color: '#6ee7b7', textTransform: 'uppercase', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.35rem', marginBottom: '0.5rem' }}>
-                    <History size={13} /> Complete Review Audit Trail ({reviewsHistory.length})
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                    {reviewsHistory.map((rev) => (
-                      <div
-                        key={rev.id}
-                        style={{
-                          background: 'rgba(0,0,0,0.25)',
-                          padding: '0.65rem 0.85rem',
-                          borderRadius: 'var(--radius-sm)',
-                          fontSize: '0.78rem',
-                          border: '1px solid rgba(255,255,255,0.05)',
+                {reviewMode === 'OVERRIDE' && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1rem' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '0.25rem' }}>
+                        Authority *
+                      </label>
+                      <select
+                        value={selectedAuthorityId}
+                        onChange={(e) => {
+                          setSelectedAuthorityId(e.target.value);
+                          setSelectedDepartmentId('');
                         }}
+                        className="form-control"
+                        id="inline-select-authority"
+                        style={{ width: '100%', background: 'var(--bg-primary)', color: '#fff', border: '1px solid var(--border-subtle)', padding: '0.5rem', borderRadius: 'var(--radius-sm)' }}
                       >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.2rem' }}>
-                          <span style={{ fontWeight: 700, color: '#fff' }}>
-                            Action: {rev.action} by {rev.reviewer_name || rev.reviewed_by?.substring(0, 8)} ({rev.reviewer_role})
-                          </span>
-                          <span style={{ color: 'var(--text-muted)' }}>
-                            {new Date(rev.created_at).toLocaleString()}
-                          </span>
-                        </div>
-                        {rev.review_notes && (
-                          <div style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                            Notes: &ldquo;{rev.review_notes}&rdquo;
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+                        <option value="">-- Choose Authority --</option>
+                        {authorities.map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.name} ({a.code})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
 
-              {/* Core Principle Notice */}
-              <div style={{ marginTop: '0.75rem', fontSize: '0.75rem', color: '#6ee7b7', opacity: 0.8 }}>
-                ⚖ <strong>Product Principle:</strong> Gemini understands WHAT &bull; PostGIS determines WHERE &bull; Rule Engine determines WHO
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '0.25rem' }}>
+                        Department *
+                      </label>
+                      <select
+                        value={selectedDepartmentId}
+                        onChange={(e) => setSelectedDepartmentId(e.target.value)}
+                        className="form-control"
+                        id="inline-select-department"
+                        style={{ width: '100%', background: 'var(--bg-primary)', color: '#fff', border: '1px solid var(--border-subtle)', padding: '0.5rem', borderRadius: 'var(--radius-sm)' }}
+                      >
+                        <option value="">-- Choose Department --</option>
+                        {departments
+                          .filter((d) => !selectedAuthorityId || d.authority_id === selectedAuthorityId)
+                          .map((d) => (
+                            <option key={d.id} value={d.id}>
+                              {d.name} ({d.code})
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ marginBottom: '1rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '0.25rem' }}>
+                    Adjudication Notes / Audit Justification
+                  </label>
+                  <input
+                    type="text"
+                    value={reviewNotes}
+                    onChange={(e) => setReviewNotes(e.target.value)}
+                    placeholder="e.g., Confirmed road maintenance authority under MCC..."
+                    className="form-control"
+                    id="inline-input-notes"
+                    style={{ width: '100%', background: 'var(--bg-primary)', color: '#fff', border: '1px solid var(--border-subtle)', padding: '0.5rem', borderRadius: 'var(--radius-sm)' }}
+                  />
+                </div>
+
+                {reviewError && (
+                  <div className="alert alert-error" style={{ marginBottom: '0.75rem', fontSize: '0.82rem' }}>
+                    <AlertCircle size={14} />
+                    <div>{reviewError}</div>
+                  </div>
+                )}
+                {reviewSuccess && (
+                  <div className="alert alert-success" style={{ marginBottom: '0.75rem', fontSize: '0.82rem' }}>
+                    <CheckCircle2 size={14} />
+                    <div>{reviewSuccess}</div>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleReviewSubmit}
+                  disabled={reviewSubmitting}
+                  className="btn btn-primary btn-sm"
+                  id="btn-inline-submit-review"
+                >
+                  {reviewSubmitting ? (
+                    <>
+                      <RefreshCw size={13} className="spin" /> Submitting...
+                    </>
+                  ) : reviewMode === 'APPROVE' ? (
+                    <>
+                      <Check size={14} /> Confirm Route Approval
+                    </>
+                  ) : (
+                    <>
+                      <Edit3 size={14} /> Confirm Route Override
+                    </>
+                  )}
+                </button>
               </div>
-            </div>
-          ) : (
-            <div style={{ textAlign: 'center', padding: '1.25rem 0', color: 'var(--text-muted)', fontSize: '0.88rem' }}>
-              Responsibility routing snapshot has not yet been computed for this report.
-              <div style={{ marginTop: '0.5rem' }}>
+            )}
+
+            {/* Admin Reprocess Actions */}
+            {role === 'ADMIN' && (
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', paddingTop: '0.75rem', borderTop: '1px solid rgba(255, 255, 255, 0.08)' }}>
+                <button
+                  onClick={() => handleTriggerAnalysis(true)}
+                  disabled={analyzing}
+                  className="btn btn-outline btn-sm"
+                  id="btn-trigger-ai-analysis"
+                >
+                  <RefreshCw size={12} className={analyzing ? 'spin' : ''} />
+                  {analyzing ? 'Reprocessing AI...' : 'Reprocess AI'}
+                </button>
+
+                <button
+                  onClick={handleResolveJurisdiction}
+                  disabled={resolvingJur}
+                  className="btn btn-outline btn-sm"
+                >
+                  <Compass size={12} className={resolvingJur ? 'spin' : ''} />
+                  {resolvingJur ? 'Resolving Boundary...' : 'Re-resolve Boundary'}
+                </button>
+
                 <button
                   onClick={handleResolveRouting}
                   disabled={resolvingRouting}
-                  className="btn btn-secondary btn-sm"
+                  className="btn btn-outline btn-sm"
+                  id="btn-re-resolve-routing"
                 >
-                  <Building2 size={14} /> Resolve Responsibility Now
+                  <Building2 size={12} className={resolvingRouting ? 'spin' : ''} />
+                  {resolvingRouting ? 'Re-routing...' : 'Re-route Authority'}
                 </button>
               </div>
-            </div>
-          )}
-        </div>
-
-        {/* Citizen Report Card */}
-        <div className="card" style={{ marginBottom: '1.5rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem' }}>
-            <div>
-              <span
-                style={{
-                  background: 'rgba(37, 99, 235, 0.2)',
-                  color: '#93c5fd',
-                  border: '1px solid rgba(37, 99, 235, 0.4)',
-                  padding: '0.25rem 0.75rem',
-                  borderRadius: 'var(--radius-sm)',
-                  fontSize: '0.8rem',
-                  fontWeight: 700,
-                  textTransform: 'uppercase',
-                }}
-              >
-                {report.category}
-              </span>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-faint)', marginTop: '0.4rem', fontFamily: 'monospace' }}>
-                Report ID: {report.id}
-              </div>
-            </div>
-
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-              <Clock size={14} />
-              <span>{new Date(report.reportedAt).toLocaleString()}</span>
-            </div>
+            )}
           </div>
+        )}
 
-          <div style={{ marginBottom: '1.5rem' }}>
-            <h4 style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              Original Citizen Description
-            </h4>
-            <p style={{ fontSize: '1.05rem', lineHeight: '1.6', color: 'var(--text-main)', background: 'var(--bg-primary)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
-              {report.description}
-            </p>
-          </div>
-
-          {/* Photo Evidence */}
-          {report.photoUrl && (
-            <div style={{ marginBottom: '1.5rem' }}>
-              <h4 style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Attached Evidence Photo
-              </h4>
-              <img
-                src={report.photoUrl}
-                alt="Civic evidence"
-                style={{
-                  width: '100%',
-                  maxHeight: '400px',
-                  objectFit: 'contain',
-                  background: '#000',
-                  borderRadius: 'var(--radius-md)',
-                  border: '1px solid var(--border-subtle)',
-                }}
-              />
-            </div>
-          )}
-
-          {/* Location Details */}
-          <div>
-            <h4 style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              Captured Location
-            </h4>
-            <div
-              style={{
-                background: 'var(--bg-primary)',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: 'var(--radius-md)',
-                padding: '1rem',
-              }}
-            >
-              <div className="detail-row">
-                <span className="detail-key">Location Status</span>
-                <span className="detail-val" style={{ color: report.location?.status === 'VERIFIED_COORDINATES' ? 'var(--status-200)' : 'var(--status-401)' }}>
-                  {report.location?.status}
-                </span>
-              </div>
-              <div className="detail-row">
-                <span className="detail-key">GPS Latitude</span>
-                <span className="detail-val">{report.location?.latitude ?? 'Not Provided'}</span>
-              </div>
-              <div className="detail-row">
-                <span className="detail-key">GPS Longitude</span>
-                <span className="detail-val">{report.location?.longitude ?? 'Not Provided'}</span>
-              </div>
-              <div className="detail-row">
-                <span className="detail-key">Accuracy Estimate</span>
-                <span className="detail-val">
-                  {report.location?.accuracy ? `~${report.location.accuracy} meters` : 'N/A'}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
 
-      {/* Phase 8: Citizen Dispute Modal */}
+      {/* ========================================================================= */}
+      {/* PHASE 8: CITIZEN DISPUTE MODAL                                            */}
+      {/* ========================================================================= */}
       {showDisputeModal && (
         <div className="modal-overlay" style={{ zIndex: 1000 }}>
           <div className="modal-card" style={{ maxWidth: '520px', width: '90%' }}>
@@ -1989,18 +1407,18 @@ export const ReportDetail = () => {
 
             <form onSubmit={handleDisputeSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
               <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.5 }}>
-                Please explain why the civic issue is not resolved. Your feedback will be recorded in the public accountability audit log and dispatched to the municipal team.
+                Please explain why the civic problem is not resolved. Your feedback will be dispatched directly to the municipal team to reopen the case and resume work.
               </p>
 
               <div>
                 <label className="form-label" style={{ fontWeight: 600, color: 'var(--text-main)' }}>
-                  Reason for Dispute (Mandatory, min 10 chars)
+                  Reason for Dispute (Minimum 10 characters)
                 </label>
                 <textarea
                   id="input-dispute-reason"
                   value={disputeReason}
                   onChange={(e) => setDisputeReason(e.target.value)}
-                  placeholder="e.g., Pothole is still present, only dirt was poured without asphalt sealant..."
+                  placeholder="e.g., Pothole is still present, only loose gravel was placed without asphalt sealant..."
                   rows={4}
                   required
                   className="form-input"

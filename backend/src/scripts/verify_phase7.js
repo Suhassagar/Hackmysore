@@ -145,15 +145,17 @@ async function runPhase7Verification() {
   // TEST 1: AUTO_ROUTED report creates exactly one case
   // -------------------------------------------------------------
   console.log('--- TEST 1: AUTO_ROUTED report creates exactly one case ---');
+  const report1Lat = 12.3180 + ((Date.now() % 500) / 100000);
+  const report1Lng = 76.6350 + ((Date.now() % 500) / 100000);
   const createReportRes1 = await request({
     path: '/api/reports',
     method: 'POST',
     headers: { Authorization: `Bearer ${citToken}` },
     body: {
       category: 'POTHOLE',
-      description: 'Huge dangerous pothole near railway gate',
-      latitude: 12.315,
-      longitude: 76.635,
+      description: `Huge dangerous pothole near railway gate - ${Date.now()}`,
+      latitude: report1Lat,
+      longitude: report1Lng,
     },
   });
 
@@ -191,15 +193,17 @@ async function runPhase7Verification() {
   // TEST 2: NEEDS_REVIEW report does not become operationally assigned before human review
   // -------------------------------------------------------------
   console.log('\n--- TEST 2: NEEDS_REVIEW report does not become operationally assigned before human review ---');
+  const report2Lat = 12.100 + ((Date.now() % 500) / 100000);
+  const report2Lng = 76.500 + ((Date.now() % 500) / 100000);
   const createReportRes2 = await request({
     path: '/api/reports',
     method: 'POST',
     headers: { Authorization: `Bearer ${citToken}` },
     body: {
       category: 'POTHOLE',
-      description: 'Issue far away outside known boundary',
-      latitude: 12.100, // outside boundaries -> NO_JURISDICTION_MATCH -> NEEDS_REVIEW
-      longitude: 76.500,
+      description: `Issue far away outside known boundary - ${Date.now()}`,
+      latitude: report2Lat, // outside boundaries -> NO_JURISDICTION_MATCH -> NEEDS_REVIEW
+      longitude: report2Lng,
     },
   });
 

@@ -6,6 +6,9 @@ const mediaStorage = require('../services/storage');
 const aiService = require('../services/ai');
 const jurisdictionService = require('../services/jurisdiction');
 const responsibilityService = require('../services/responsibility');
+const contentModerationService = require('../services/contentModeration');
+const exifParserService = require('../services/exifParser');
+const incidentClusteringService = require('../services/incidentClustering');
 
 const router = express.Router();
 
@@ -79,9 +82,45 @@ router.post('/', requireAuth, requireRole('CITIZEN'), async (req, res) => {
       longitude,
       accuracy,
       photoData,
+      idempotencyKey: bodyIdempotencyKey,
     } = req.body;
 
     const reporterUserId = req.user.id;
+    const idempotencyKey = req.headers['x-idempotency-key'] || bodyIdempotencyKey || null;
+
+    // Phase 3B: Idempotent Submission Check
+    if (idempotencyKey) {
+      const existingReport = await db.getReportByIdempotencyKey(idempotencyKey, reporterUserId);
+      if (existingReport) {
+        let jurSnapshot = null;
+        let routingSnapshot = null;
+        try {
+          jurSnapshot = await db.getReportJurisdictionSnapshot(existingReport.id);
+          routingSnapshot = await db.getReportRoutingSnapshot(existingReport.id);
+        } catch (_) {}
+
+        return res.status(200).json({
+          id: existingReport.id,
+          category: existingReport.category,
+          description: existingReport.description,
+          location: {
+            latitude: existingReport.latitude !== null && existingReport.latitude !== undefined ? parseFloat(existingReport.latitude) : null,
+            longitude: existingReport.longitude !== null && existingReport.longitude !== undefined ? parseFloat(existingReport.longitude) : null,
+            accuracy: existingReport.location_accuracy !== null && existingReport.location_accuracy !== undefined ? parseFloat(existingReport.location_accuracy) : null,
+            status: existingReport.location_status,
+          },
+          photoUrl: existingReport.photo_url,
+          photoStatus: existingReport.photo_status || 'VALID_NO_METADATA',
+          photoMetadata: existingReport.photo_metadata || null,
+          incidentId: existingReport.incident_id || null,
+          status: existingReport.status,
+          reportedAt: existingReport.reported_at,
+          jurisdiction: jurSnapshot,
+          routing: routingSnapshot,
+          idempotentReplay: true,
+        });
+      }
+    }
 
     // 1. Anti-duplicate submission check (double-click protection)
     const dedupKey = `${reporterUserId}-${(description || '').trim().slice(0, 30)}`;
@@ -101,7 +140,7 @@ router.post('/', requireAuth, requireRole('CITIZEN'), async (req, res) => {
     }
     const normalizedCategory = category.toUpperCase();
 
-    // 3. Validate description
+    // 3. Validate description & apply abusive text moderation (Phase 3B)
     if (!description || typeof description !== 'string') {
       return res.status(400).json({
         error: 'Bad Request',
@@ -121,6 +160,18 @@ router.post('/', requireAuth, requireRole('CITIZEN'), async (req, res) => {
       return res.status(400).json({
         error: 'Bad Request',
         message: 'Description exceeds maximum limit of 1000 characters.',
+      });
+    }
+
+    const moderation = contentModerationService.moderateContent(trimmedDescription);
+    if (!moderation.isAcceptable) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: moderation.politePrompt || 'Please rewrite your report using respectful language.',
+        moderation: {
+          flagged: true,
+          reason: moderation.reason,
+        },
       });
     }
 
@@ -166,10 +217,19 @@ router.post('/', requireAuth, requireRole('CITIZEN'), async (req, res) => {
       locationStatus = 'LOCATION_MISSING';
     }
 
-    // 5. Process Photo / Media if attached
+    // 5. Process Photo / Media & Inspect EXIF authenticity signals (Phase 3B)
     let photoUrl = null;
+    let photoStatus = 'VALID_NO_METADATA';
+    let photoMetadata = null;
+
     if (photoData) {
       try {
+        const exifResult = exifParserService.inspectPhoto(photoData, {
+          reportedLatitude: parsedLat,
+          reportedLongitude: parsedLng,
+        });
+        photoStatus = exifResult.status;
+        photoMetadata = exifResult.metadata;
         photoUrl = await mediaStorage.upload(photoData);
       } catch (mediaErr) {
         return res.status(400).json({
@@ -179,7 +239,17 @@ router.post('/', requireAuth, requireRole('CITIZEN'), async (req, res) => {
       }
     }
 
-    // 6. Create Report Record in Database
+    // 6. Evaluate Duplicate Incident Cluster (Phase 3B)
+    let clusterEvaluation = null;
+    if (parsedLat !== null && parsedLng !== null) {
+      clusterEvaluation = await incidentClusteringService.evaluateCluster({
+        category: normalizedCategory,
+        latitude: parsedLat,
+        longitude: parsedLng,
+      });
+    }
+
+    // 7. Create Report Record in Database
     recentSubmissions.set(dedupKey, Date.now());
     const newReport = await db.createReport({
       reporterUserId,
@@ -190,9 +260,31 @@ router.post('/', requireAuth, requireRole('CITIZEN'), async (req, res) => {
       locationAccuracy: parsedAccuracy,
       locationStatus,
       photoUrl,
+      idempotencyKey,
+      photoStatus,
+      photoMetadata,
+      incidentId: clusterEvaluation?.isCluster ? clusterEvaluation.incidentId : null,
     });
 
-    // 7. Resolve Geospatial Jurisdiction & Record Historical Snapshot (Phase 4)
+    // 8. Record Incident linkage
+    let incidentLink = null;
+    if (parsedLat !== null && parsedLng !== null) {
+      incidentLink = await incidentClusteringService.recordReportLink(
+        newReport.id,
+        clusterEvaluation,
+        {
+          category: normalizedCategory,
+          latitude: parsedLat,
+          longitude: parsedLng,
+          reporterUserId,
+        }
+      );
+      if (incidentLink?.incidentId && !newReport.incident_id) {
+        newReport.incident_id = incidentLink.incidentId;
+      }
+    }
+
+    // 9. Resolve Geospatial Jurisdiction & Record Historical Snapshot (Phase 4)
     let jurisdictionSnapshot = null;
     if (parsedLat !== null && parsedLng !== null) {
       try {
@@ -202,7 +294,7 @@ router.post('/', requireAuth, requireRole('CITIZEN'), async (req, res) => {
       }
     }
 
-    // 8. Resolve Civic Responsibility & Record Routing Snapshot (Phase 5)
+    // 10. Resolve Civic Responsibility & Record Routing Snapshot (Phase 5)
     let routingSnapshot = null;
     if (parsedLat !== null && parsedLng !== null) {
       try {
@@ -212,11 +304,11 @@ router.post('/', requireAuth, requireRole('CITIZEN'), async (req, res) => {
       }
     }
 
-    // 9. Trigger Asynchronous AI Issue Understanding (Phase 3)
+    // 11. Trigger Asynchronous AI Issue Understanding (Phase 3)
     // Non-blocking: if Gemini takes time or fails, citizen report is already safely saved
     triggerAsyncAiAnalysis(newReport);
 
-    // 10. Format clean response
+    // 12. Format clean response
     res.status(201).json({
       id: newReport.id,
       category: newReport.category,
@@ -228,6 +320,11 @@ router.post('/', requireAuth, requireRole('CITIZEN'), async (req, res) => {
         status: newReport.location_status,
       },
       photoUrl: newReport.photo_url,
+      photoStatus: newReport.photo_status,
+      photoMetadata: newReport.photo_metadata,
+      incidentId: newReport.incident_id,
+      isCluster: Boolean(incidentLink?.isCluster),
+      clusterReportCount: incidentLink?.reportCount || 1,
       status: newReport.status,
       reportedAt: newReport.reported_at,
       jurisdiction: jurisdictionSnapshot,
@@ -261,6 +358,8 @@ router.get('/my', requireAuth, requireRole('CITIZEN'), async (req, res) => {
         status: r.location_status,
       },
       photoUrl: r.photo_url,
+      photoStatus: r.photo_status || 'VALID_NO_METADATA',
+      incidentId: r.incident_id || null,
       status: r.status,
       reportedAt: r.reported_at,
     }));
@@ -326,6 +425,16 @@ router.get('/:id', requireAuth, async (req, res) => {
       console.warn(`[Case] Could not fetch case for Report ${id}:`, cErr.message);
     }
 
+    // Retrieve associated incident if part of a cluster (Phase 3B)
+    let incidentItem = null;
+    if (report.incident_id) {
+      try {
+        incidentItem = await db.getIncidentById(report.incident_id);
+      } catch (incErr) {
+        console.warn(`[Incident] Could not fetch incident for Report ${id}:`, incErr.message);
+      }
+    }
+
     res.json({
       id: report.id,
       category: report.category,
@@ -337,6 +446,17 @@ router.get('/:id', requireAuth, async (req, res) => {
         status: report.location_status,
       },
       photoUrl: report.photo_url,
+      photoStatus: report.photo_status || 'VALID_NO_METADATA',
+      photoMetadata: report.photo_metadata || null,
+      incidentId: report.incident_id || null,
+      incident: incidentItem ? {
+        id: incidentItem.id,
+        category: incidentItem.category,
+        reportCount: incidentItem.report_count,
+        caseId: incidentItem.case_id,
+        firstReportedAt: incidentItem.first_reported_at,
+        lastReportedAt: incidentItem.last_reported_at,
+      } : null,
       status: report.status,
       reportedAt: report.reported_at,
       jurisdiction: jurisdictionSnapshot,

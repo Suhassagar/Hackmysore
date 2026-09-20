@@ -46,7 +46,7 @@ class CaseService {
   /**
    * Verify whether a user is authorized to view or act upon a case
    */
-  canUserAccessCase(user, civicCase, isWriteAction = false) {
+  canUserAccessCase(user, civicCase, isWriteAction = false, owningUserId = null) {
     if (!user) return false;
 
     // 1. ADMIN has global access across all authorities and departments
@@ -57,7 +57,7 @@ class CaseService {
     // 2. CITIZEN can only view their own report's case (no write actions)
     if (user.role === 'CITIZEN') {
       if (isWriteAction) return false;
-      return civicCase.report_user_id === user.id;
+      return civicCase.report_user_id === user.id || (owningUserId && owningUserId === user.id);
     }
 
     // 3. STAFF permissions
@@ -97,6 +97,15 @@ class CaseService {
       return existing;
     }
 
+    // Phase 3B: Check if report belongs to an incident that already has an operational case
+    const report = await db.getReportById(reportId);
+    if (report && report.incident_id) {
+      const incident = await db.getIncidentById(report.incident_id);
+      if (incident && incident.case_id) {
+        return await db.getCaseById(incident.case_id);
+      }
+    }
+
     // Case creation policy:
     // Only create operational cases if routing produced a valid route:
     // AUTO_ROUTED OR decision_source === 'HUMAN_REVIEW' OR route_status === 'ROUTED'
@@ -134,7 +143,15 @@ class CaseService {
       note: options.note || (isHumanReviewed ? 'Case created following human review approval.' : 'Case created automatically from deterministic route.'),
     };
 
-    return await db.createCase(caseData);
+    const newCase = await db.createCase(caseData);
+    if (newCase && report && report.incident_id) {
+      try {
+        await db.updateIncidentCaseId(report.incident_id, newCase.id);
+      } catch (incErr) {
+        console.warn(`[CaseService] Failed to link Incident ${report.incident_id} to Case ${newCase.id}:`, incErr.message);
+      }
+    }
+    return newCase;
   }
 
   /**
@@ -161,10 +178,21 @@ class CaseService {
    * Retrieve a case for a report ID with security checks
    */
   async getCaseByReportId(reportId, user) {
-    const civicCase = await db.getCaseByReportId(reportId);
+    let civicCase = await db.getCaseByReportId(reportId);
+    let linkedReport = null;
+    if (!civicCase) {
+      linkedReport = await db.getReportById(reportId);
+      if (linkedReport && linkedReport.incident_id) {
+        const incident = await db.getIncidentById(linkedReport.incident_id);
+        if (incident && incident.case_id) {
+          civicCase = await db.getCaseById(incident.case_id);
+        }
+      }
+    }
     if (!civicCase) return null;
 
-    if (!this.canUserAccessCase(user, civicCase, false)) {
+    const owningUserId = linkedReport ? linkedReport.reporter_user_id : civicCase.report_user_id;
+    if (!this.canUserAccessCase(user, civicCase, false, owningUserId)) {
       const err = new Error('Access Denied: You do not have authorization to view this case.');
       err.status = 403;
       throw err;
@@ -351,6 +379,21 @@ class CaseService {
           note: note ? note.trim() : 'Case reopened following citizen dispute',
           metadata: { cycle_number: currentVer.cycle_number },
         });
+      }
+    }
+
+    // Phase 3B: Sync associated incident status with case lifecycle
+    if (['RESOLVED', 'CLOSED'].includes(toStatus)) {
+      try {
+        await db.updateIncidentStatusByCaseId(caseId, toStatus);
+      } catch (incErr) {
+        console.warn(`[CaseService] Failed to sync incident status to ${toStatus}:`, incErr.message);
+      }
+    } else if (toStatus === CASE_STATUS.IN_PROGRESS && civicCase.status === CASE_STATUS.RESOLVED) {
+      try {
+        await db.updateIncidentStatusByCaseId(caseId, 'ACTIVE');
+      } catch (incErr) {
+        console.warn('[CaseService] Failed to sync incident status to ACTIVE on reopen:', incErr.message);
       }
     }
 

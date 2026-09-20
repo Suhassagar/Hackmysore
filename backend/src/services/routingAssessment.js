@@ -30,6 +30,7 @@ const REVIEW_REASONS = Object.freeze({
   INVALID_LOCATION: 'INVALID_LOCATION',
   INCOMPLETE_REPORT: 'INCOMPLETE_REPORT',
   ROUTING_DATA_ERROR: 'ROUTING_DATA_ERROR',
+  PHOTO_LOCATION_MISMATCH: 'PHOTO_LOCATION_MISMATCH',
   UNKNOWN: 'UNKNOWN',
 });
 
@@ -84,6 +85,14 @@ class RoutingAssessmentService {
 
       if (!hasCoords || report.location_status === 'LOCATION_MISSING') {
         reviewReasons.push(REVIEW_REASONS.INVALID_LOCATION);
+      }
+
+      // Photo Authenticity Check (Phase 3B)
+      const photoStatus = report?.photo_status || report?.photoStatus;
+      if (photoStatus === 'LOCATION_MISMATCH') {
+        if (!reviewReasons.includes(REVIEW_REASONS.PHOTO_LOCATION_MISMATCH)) {
+          reviewReasons.push(REVIEW_REASONS.PHOTO_LOCATION_MISMATCH);
+        }
       }
 
       // 2. AI Confidence & Uncertainty Evaluation

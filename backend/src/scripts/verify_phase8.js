@@ -135,6 +135,7 @@ async function runPhase8Verification() {
   console.log(`Admin: ${adminUser.name} (${adminUser.id})\n`);
 
   let reportCounter = 1;
+  const runOffset = ((Date.now() % 500) / 100000);
   async function createReportAndAdvance(token, staffToken, targetStatus = 'IN_PROGRESS') {
     const repRes = await request({
       path: '/api/reports',
@@ -143,7 +144,7 @@ async function runPhase8Verification() {
       body: {
         category: 'POTHOLE',
         description: `Pothole report test #${reportCounter++} - ${Date.now()} on Jayalakshmipuram 5th Main Rd near park.`,
-        latitude: 12.3160,
+        latitude: 12.3170 + runOffset + (reportCounter * 0.001),
         longitude: 76.6340,
       },
     });

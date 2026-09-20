@@ -77,13 +77,20 @@ export const api = {
   testStaff: (token) => apiRequest('/auth/test/staff', { token }),
   testAdmin: (token) => apiRequest('/auth/test/admin', { token }),
 
-  // Phase 2 Citizen Civic Reports
-  createReport: (reportData, token) =>
-    apiRequest('/reports', {
+  // Phase 2 & Phase 3B Citizen Civic Reports
+  createReport: (reportData, token, options = {}) => {
+    const key = options.idempotencyKey || reportData?.idempotencyKey || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : null);
+    const headers = {};
+    if (key) {
+      headers['X-Idempotency-Key'] = key;
+    }
+    return apiRequest('/reports', {
       method: 'POST',
-      body: JSON.stringify(reportData),
+      body: JSON.stringify({ ...reportData, idempotencyKey: key }),
+      headers,
       token,
-    }),
+    });
+  },
 
   getMyReports: (token) =>
     apiRequest('/reports/my', {

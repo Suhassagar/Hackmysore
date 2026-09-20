@@ -26,6 +26,7 @@ function verifyPassword(password, storedHash) {
 
 let pool = null;
 let isPostgresConnected = false;
+let hasPostgis = false;
 
 // Fallback in-memory stores for development/testing when PostgreSQL is not running
 const fallbackUsers = new Map();
@@ -48,6 +49,23 @@ let fallbackCaseSeq = 10001;
 // Phase 8: Resolution Evidence & Case Verifications
 const fallbackResolutionEvidence = new Map(); // id -> resolution evidence
 const fallbackCaseVerifications = new Map(); // id -> case verification
+
+// Phase 3B: Duplicate Incident Clusters
+const fallbackIncidents = new Map(); // id -> incident cluster
+
+function calculateHaversineDistanceMeters(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Math.round(R * c);
+}
 
 function generateFallbackCaseNumber() {
   const year = new Date().getFullYear();
@@ -280,6 +298,121 @@ function isPointInPolygon([lng, lat], coordinates) {
   return inside;
 }
 
+async function seedPostgresDatabase(client) {
+  try {
+    // 1. Authorities & Departments & Rules
+    const authCount = await client.query('SELECT COUNT(*) FROM authorities');
+    if (parseInt(authCount.rows[0].count, 10) === 0) {
+      console.log('[DB] Seeding authorities and departments into PostgreSQL...');
+      const fixturePath = path.join(__dirname, '../data/fixtures/mysuru_responsibility_rules.json');
+      if (fs.existsSync(fixturePath)) {
+        const fixture = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
+        const authMap = new Map();
+        for (const a of fixture.authorities) {
+          const res = await client.query(
+            'INSERT INTO authorities (code, name, type) VALUES ($1, $2, $3) ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name RETURNING id, code',
+            [a.code, a.name, a.type]
+          );
+          authMap.set(a.code, res.rows[0].id);
+        }
+        const deptMap = new Map();
+        for (const d of fixture.departments) {
+          const authId = authMap.get(d.authorityCode);
+          if (authId) {
+            const res = await client.query(
+              'INSERT INTO departments (authority_id, code, name, description) VALUES ($1, $2, $3, $4) ON CONFLICT (authority_id, code) DO UPDATE SET name = EXCLUDED.name RETURNING id, code',
+              [authId, d.code, d.name, d.description]
+            );
+            deptMap.set(`${d.authorityCode}:${d.code}`, res.rows[0].id);
+          }
+        }
+        for (const r of fixture.rules) {
+          const authId = authMap.get(r.authorityCode);
+          const deptId = deptMap.get(`${r.authorityCode}:${r.departmentCode}`);
+          if (authId && deptId) {
+            await client.query(
+              `INSERT INTO responsibility_rules (
+                jurisdiction_id, jurisdiction_type, issue_category, authority_id, department_id,
+                version, valid_from, valid_until, priority, active, metadata
+              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+              [
+                null,
+                r.jurisdictionType || null,
+                r.issueCategory,
+                authId,
+                deptId,
+                r.version || 'v1',
+                new Date(r.validFrom || Date.now()),
+                r.validUntil ? new Date(r.validUntil) : null,
+                r.priority || 100,
+                true,
+                JSON.stringify({ description: r.description }),
+              ]
+            );
+          }
+        }
+      }
+    }
+
+    // 2. Default Users
+    const userCount = await client.query('SELECT COUNT(*) FROM users');
+    if (parseInt(userCount.rows[0].count, 10) === 0) {
+      console.log('[DB] Seeding default test users into PostgreSQL...');
+      const defaultHash = '00000000000000000000000000000000:f42fabe23b5f5e6b95f60099a394713d6e47cc3e851153840deb853de4bc7bc84a6d914088a102d8b133a48b15f7105ad444ab213f57c1fdc40263451b05eed2';
+      const mccRes = await client.query("SELECT id FROM authorities WHERE code = 'MCC'");
+      const mccId = mccRes.rows[0]?.id || null;
+      const roadsRes = await client.query("SELECT id FROM departments WHERE code = 'MCC_ROADS'");
+      const roadsId = roadsRes.rows[0]?.id || null;
+      const drainRes = await client.query("SELECT id FROM departments WHERE code = 'MCC_DRAINAGE'");
+      const drainId = drainRes.rows[0]?.id || null;
+
+      await client.query(`
+        INSERT INTO users (id, auth_uid, name, email, role, password_hash, authority_id, department_id) VALUES
+        ('00000000-0000-0000-0000-000000000001', 'dev-citizen-01', 'Naveen Kumar (Mysuru Citizen)', 'citizen@mysuru.civicflow.in', 'CITIZEN', $1, NULL, NULL),
+        ('00000000-0000-0000-0000-000000000004', 'dev-citizen-02', 'Ananya Deshmukh (Other Citizen)', 'citizen2@mysuru.civicflow.in', 'CITIZEN', $1, NULL, NULL),
+        ('00000000-0000-0000-0000-000000000002', 'dev-staff-01', 'Radha Shastry (MCC Ward Officer)', 'staff@mysuru.civicflow.in', 'STAFF', $1, $2, $3),
+        ('00000000-0000-0000-0000-000000000005', 'dev-staff-drainage', 'Mahesh Gowda (MCC Drainage Officer)', 'staff-drainage@mysuru.civicflow.in', 'STAFF', $1, $2, $4),
+        ('00000000-0000-0000-0000-000000000003', 'dev-admin-01', 'Dr. Ramesh Rao (Chief Admin)', 'admin@mysuru.civicflow.in', 'ADMIN', $1, NULL, NULL)
+        ON CONFLICT (email) DO NOTHING
+      `, [defaultHash, mccId, roadsId, drainId]);
+    }
+
+    // 3. Jurisdictions and Boundaries
+    const jurCount = await client.query('SELECT COUNT(*) FROM jurisdictions');
+    if (parseInt(jurCount.rows[0].count, 10) === 0) {
+      console.log('[DB] Seeding Mysuru jurisdictions and boundaries into PostgreSQL...');
+      const geoPath = path.join(__dirname, '../data/fixtures/mysuru_jurisdictions.geojson');
+      if (fs.existsSync(geoPath)) {
+        const geo = JSON.parse(fs.readFileSync(geoPath, 'utf8'));
+        for (const feat of geo.features) {
+          const p = feat.properties;
+          const insJur = await client.query(
+            'INSERT INTO jurisdictions (code, name, type) VALUES ($1, $2, $3) ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name RETURNING id',
+            [p.code, p.name, p.type]
+          );
+          const validFrom = p.valid_from || p.validFrom || new Date().toISOString();
+          const validUntil = p.valid_until || p.validUntil || null;
+          if (hasPostgis) {
+            await client.query(
+              `INSERT INTO jurisdiction_boundaries (jurisdiction_id, version, geometry, valid_from, valid_until, metadata)
+               VALUES ($1, $2, ST_SetSRID(ST_GeomFromGeoJSON($3), 4326), $4, $5, $6)`,
+              [jId, p.version || 'v1', JSON.stringify(feat.geometry), validFrom, validUntil, JSON.stringify(p.metadata || {})]
+            );
+          } else {
+            await client.query(
+              `INSERT INTO jurisdiction_boundaries (jurisdiction_id, version, geometry, valid_from, valid_until, metadata)
+               VALUES ($1, $2, $3::jsonb, $4, $5, $6)`,
+              [jId, p.version || 'v1', JSON.stringify(feat.geometry), validFrom, validUntil, JSON.stringify(p.metadata || {})]
+            );
+          }
+        }
+      }
+    }
+  } catch (seedErr) {
+    console.warn('[DB] Auto-seed warning:', seedErr.message);
+  }
+}
+
 async function initDb() {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
@@ -301,16 +434,26 @@ async function initDb() {
     console.log('[DB] Connected to PostgreSQL successfully.');
     isPostgresConnected = true;
 
-    // PostGIS Extension and Schemas
-    await client.query(`
-      CREATE EXTENSION IF NOT EXISTS postgis;
+    // PostGIS Extension check (graceful fallback to JSONB if extension not installed)
+    try {
+      await client.query('CREATE EXTENSION IF NOT EXISTS postgis;');
+      hasPostgis = true;
+      console.log('[DB] PostGIS extension enabled in PostgreSQL.');
+    } catch (extErr) {
+      hasPostgis = false;
+      console.log('[DB] PostGIS extension not installed. Operating with native PostgreSQL JSONB geospatial engine.');
+    }
 
+    await client.query(`
       CREATE TABLE IF NOT EXISTS users (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         auth_uid VARCHAR(128) UNIQUE NOT NULL,
         name VARCHAR(255) NOT NULL,
         email VARCHAR(255) UNIQUE NOT NULL,
         role VARCHAR(20) NOT NULL DEFAULT 'CITIZEN' CHECK (role IN ('CITIZEN', 'STAFF', 'ADMIN')),
+        password_hash VARCHAR(255),
+        authority_id UUID,
+        department_id UUID,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
@@ -343,6 +486,30 @@ async function initDb() {
       CREATE INDEX IF NOT EXISTS idx_reports_reporter_user_id ON reports(reporter_user_id);
       CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status);
       CREATE INDEX IF NOT EXISTS idx_reports_reported_at ON reports(reported_at);
+
+      -- Phase 3B: Safety, clustering & idempotency extensions
+      ALTER TABLE reports ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(128);
+      ALTER TABLE reports ADD COLUMN IF NOT EXISTS photo_status VARCHAR(50) DEFAULT 'VALID_NO_METADATA';
+      ALTER TABLE reports ADD COLUMN IF NOT EXISTS photo_metadata JSONB;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_reports_idempotency ON reports (reporter_user_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
+
+      CREATE TABLE IF NOT EXISTS incidents (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        category VARCHAR(50) NOT NULL,
+        latitude NUMERIC(10, 7) NOT NULL,
+        longitude NUMERIC(10, 7) NOT NULL,
+        address_text TEXT,
+        status VARCHAR(30) NOT NULL DEFAULT 'OPEN',
+        report_count INT NOT NULL DEFAULT 1,
+        case_id UUID,
+        first_reported_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        last_reported_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_incidents_category ON incidents(category);
+      CREATE INDEX IF NOT EXISTS idx_incidents_coords ON incidents(latitude, longitude);
+      CREATE INDEX IF NOT EXISTS idx_incidents_temporal ON incidents(first_reported_at, last_reported_at);
 
       CREATE TABLE IF NOT EXISTS report_ai_analysis (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -377,22 +544,45 @@ async function initDb() {
         created_at TIMESTAMPTZ DEFAULT NOW(),
         updated_at TIMESTAMPTZ DEFAULT NOW()
       );
+    `);
 
-      CREATE TABLE IF NOT EXISTS jurisdiction_boundaries (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        jurisdiction_id UUID NOT NULL REFERENCES jurisdictions(id) ON DELETE CASCADE,
-        version VARCHAR(50) NOT NULL,
-        geometry GEOMETRY(Polygon, 4326) NOT NULL,
-        valid_from TIMESTAMPTZ NOT NULL,
-        valid_until TIMESTAMPTZ,
-        metadata JSONB DEFAULT '{}'::jsonb,
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_jurisdiction_boundaries_geom ON jurisdiction_boundaries USING GIST (geometry);
-      CREATE INDEX IF NOT EXISTS idx_jurisdiction_boundaries_temporal ON jurisdiction_boundaries (valid_from, valid_until);
-      CREATE INDEX IF NOT EXISTS idx_jurisdiction_boundaries_jur_version ON jurisdiction_boundaries (jurisdiction_id, version);
+    if (hasPostgis) {
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS jurisdiction_boundaries (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          jurisdiction_id UUID NOT NULL REFERENCES jurisdictions(id) ON DELETE CASCADE,
+          version VARCHAR(50) NOT NULL,
+          geometry GEOMETRY(Polygon, 4326) NOT NULL,
+          valid_from TIMESTAMPTZ NOT NULL,
+          valid_until TIMESTAMPTZ,
+          metadata JSONB DEFAULT '{}'::jsonb,
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_jurisdiction_boundaries_geom ON jurisdiction_boundaries USING GIST (geometry);
+        CREATE INDEX IF NOT EXISTS idx_jurisdiction_boundaries_temporal ON jurisdiction_boundaries (valid_from, valid_until);
+        CREATE INDEX IF NOT EXISTS idx_jurisdiction_boundaries_jur_version ON jurisdiction_boundaries (jurisdiction_id, version);
+      `);
+    } else {
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS jurisdiction_boundaries (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          jurisdiction_id UUID NOT NULL REFERENCES jurisdictions(id) ON DELETE CASCADE,
+          version VARCHAR(50) NOT NULL,
+          geometry JSONB NOT NULL,
+          valid_from TIMESTAMPTZ NOT NULL,
+          valid_until TIMESTAMPTZ,
+          metadata JSONB DEFAULT '{}'::jsonb,
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_jurisdiction_boundaries_geom ON jurisdiction_boundaries USING GIN (geometry);
+        CREATE INDEX IF NOT EXISTS idx_jurisdiction_boundaries_temporal ON jurisdiction_boundaries (valid_from, valid_until);
+        CREATE INDEX IF NOT EXISTS idx_jurisdiction_boundaries_jur_version ON jurisdiction_boundaries (jurisdiction_id, version);
+      `);
+    }
 
+    await client.query(`
       CREATE TABLE IF NOT EXISTS report_jurisdiction (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         report_id UUID NOT NULL REFERENCES reports(id) ON DELETE CASCADE,
@@ -669,11 +859,10 @@ async function initDb() {
       CREATE INDEX IF NOT EXISTS idx_case_verifications_cycle ON case_verifications(case_id, cycle_number);
     `);
 
-    // Seed password hash for existing users who don't have one
-    const defaultHash = hashPassword('CivicFlow@2026');
-    await pool.query('UPDATE users SET password_hash = $1 WHERE password_hash IS NULL', [defaultHash]);
+    // Seed initial database data if empty
+    await seedPostgresDatabase(client);
 
-    console.log('[DB] PostGIS, Jurisdictions, Responsibility Rules, and Civic Cases schemas verified in PostgreSQL.');
+    console.log('[DB] PostgreSQL schemas and seed data verified successfully.');
     client.release();
   } catch (err) {
     console.warn(`[DB] Live PostgreSQL/PostGIS connection failed (${err.message}).`);
@@ -825,6 +1014,10 @@ const db = {
     locationAccuracy = null,
     locationStatus = 'VERIFIED_COORDINATES',
     photoUrl = null,
+    idempotencyKey = null,
+    photoStatus = 'VALID_NO_METADATA',
+    photoMetadata = null,
+    incidentId = null,
   }) {
     const validCategories = [
       'POTHOLE',
@@ -851,10 +1044,14 @@ const db = {
           location_status,
           photo_url,
           status,
+          idempotency_key,
+          photo_status,
+          photo_metadata,
+          incident_id,
           reported_at,
           created_at,
           updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'SUBMITTED', NOW(), NOW(), NOW())
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'SUBMITTED', $9, $10, $11, $12, NOW(), NOW(), NOW())
         RETURNING *`,
         [
           reporterUserId,
@@ -865,6 +1062,10 @@ const db = {
           locationAccuracy,
           locationStatus,
           photoUrl,
+          idempotencyKey,
+          photoStatus,
+          photoMetadata ? JSON.stringify(photoMetadata) : null,
+          incidentId,
         ]
       );
       return res.rows[0];
@@ -882,7 +1083,10 @@ const db = {
       location_status: locationStatus,
       photo_url: photoUrl,
       status: 'SUBMITTED',
-      incident_id: null,
+      idempotency_key: idempotencyKey,
+      photo_status: photoStatus,
+      photo_metadata: photoMetadata,
+      incident_id: incidentId,
       reported_at: now,
       created_at: now,
       updated_at: now,
@@ -915,6 +1119,200 @@ const db = {
       }
     }
     return userReports.sort((a, b) => new Date(b.reported_at) - new Date(a.reported_at));
+  },
+
+  async getReportByIdempotencyKey(idempotencyKey, reporterUserId = null) {
+    if (!idempotencyKey) return null;
+    if (isPostgresConnected && pool) {
+      let query = 'SELECT * FROM reports WHERE idempotency_key = $1';
+      const params = [idempotencyKey];
+      if (reporterUserId) {
+        query += ' AND reporter_user_id = $2';
+        params.push(reporterUserId);
+      }
+      const res = await pool.query(query, params);
+      return res.rows[0] || null;
+    }
+    for (const r of fallbackReports.values()) {
+      if (r.idempotency_key === idempotencyKey) {
+        if (!reporterUserId || r.reporter_user_id === reporterUserId) {
+          return r;
+        }
+      }
+    }
+    return null;
+  },
+
+  async findNearbyIncident({ category, latitude, longitude, hoursWindow = 48, radiusMeters = 50 }) {
+    if (latitude === null || longitude === null || latitude === undefined || longitude === undefined) {
+      return null;
+    }
+    const lat = Number(latitude);
+    const lng = Number(longitude);
+    if (isNaN(lat) || isNaN(lng)) return null;
+
+    if (isPostgresConnected && pool) {
+      const query = `
+        SELECT *, (
+          6371000 * 2 * ASIN(
+            SQRT(
+              POWER(SIN(RADIANS(latitude - $2) / 2), 2) +
+              COS(RADIANS($2)) * COS(RADIANS(latitude)) *
+              POWER(SIN(RADIANS(longitude - $3) / 2), 2)
+            )
+          )
+        ) AS distance_meters
+        FROM incidents
+        WHERE category = $1
+          AND status IN ('OPEN', 'ACTIVE')
+          AND last_reported_at >= NOW() - ($4 || ' hours')::INTERVAL
+        ORDER BY distance_meters ASC
+        LIMIT 1
+      `;
+      const res = await pool.query(query, [category, lat, lng, hoursWindow]);
+      if (res.rows.length > 0 && parseFloat(res.rows[0].distance_meters) <= radiusMeters) {
+        return res.rows[0];
+      }
+      return null;
+    }
+
+    const now = Date.now();
+    const windowMs = hoursWindow * 3600 * 1000;
+    let closestIncident = null;
+    let minDistance = Infinity;
+
+    for (const inc of fallbackIncidents.values()) {
+      if (inc.category === category && (inc.status === 'OPEN' || inc.status === 'ACTIVE')) {
+        const lastReportedTime = new Date(inc.last_reported_at).getTime();
+        if (now - lastReportedTime <= windowMs) {
+          const dist = calculateHaversineDistanceMeters(lat, lng, inc.latitude, inc.longitude);
+          if (dist <= radiusMeters && dist < minDistance) {
+            minDistance = dist;
+            closestIncident = { ...inc, distance_meters: dist };
+          }
+        }
+      }
+    }
+    return closestIncident;
+  },
+
+  async createIncident({ category, latitude, longitude, addressText = null, initialReportId = null }) {
+    if (isPostgresConnected && pool) {
+      const res = await pool.query(
+        `INSERT INTO incidents (
+          category,
+          latitude,
+          longitude,
+          address_text,
+          status,
+          report_count,
+          first_reported_at,
+          last_reported_at,
+          created_at,
+          updated_at
+        ) VALUES ($1, $2, $3, $4, 'ACTIVE', 1, NOW(), NOW(), NOW(), NOW())
+        RETURNING *`,
+        [category, latitude, longitude, addressText]
+      );
+      const inc = res.rows[0];
+      if (initialReportId) {
+        await pool.query('UPDATE reports SET incident_id = $1 WHERE id = $2', [inc.id, initialReportId]);
+      }
+      return inc;
+    }
+
+    const now = new Date().toISOString();
+    const inc = {
+      id: uuidv4(),
+      category,
+      latitude: Number(latitude),
+      longitude: Number(longitude),
+      address_text: addressText,
+      status: 'OPEN',
+      report_count: 1,
+      case_id: null,
+      first_reported_at: now,
+      last_reported_at: now,
+      created_at: now,
+      updated_at: now,
+    };
+    fallbackIncidents.set(inc.id, inc);
+    if (initialReportId) {
+      const rep = fallbackReports.get(initialReportId);
+      if (rep) rep.incident_id = inc.id;
+    }
+    return inc;
+  },
+
+  async linkReportToIncident(reportId, incidentId) {
+    if (isPostgresConnected && pool) {
+      await pool.query(
+        `UPDATE incidents
+         SET report_count = report_count + 1,
+             last_reported_at = NOW(),
+             updated_at = NOW()
+         WHERE id = $1`,
+        [incidentId]
+      );
+      await pool.query('UPDATE reports SET incident_id = $1 WHERE id = $2', [incidentId, reportId]);
+      const res = await pool.query('SELECT * FROM incidents WHERE id = $1', [incidentId]);
+      return res.rows[0];
+    }
+
+    const inc = fallbackIncidents.get(incidentId);
+    if (inc) {
+      inc.report_count += 1;
+      inc.last_reported_at = new Date().toISOString();
+      inc.updated_at = inc.last_reported_at;
+    }
+    const rep = fallbackReports.get(reportId);
+    if (rep) {
+      rep.incident_id = incidentId;
+    }
+    return inc;
+  },
+
+  async updateIncidentCaseId(incidentId, caseId) {
+    if (isPostgresConnected && pool) {
+      const res = await pool.query(
+        'UPDATE incidents SET case_id = $1, updated_at = NOW() WHERE id = $2 RETURNING *',
+        [caseId, incidentId]
+      );
+      return res.rows[0];
+    }
+    const inc = fallbackIncidents.get(incidentId);
+    if (inc) {
+      inc.case_id = caseId;
+      inc.updated_at = new Date().toISOString();
+    }
+    return inc;
+  },
+
+  async getIncidentById(id) {
+    if (isPostgresConnected && pool) {
+      const res = await pool.query('SELECT * FROM incidents WHERE id = $1', [id]);
+      return res.rows[0] || null;
+    }
+    return fallbackIncidents.get(id) || null;
+  },
+
+  async updateIncidentStatusByCaseId(caseId, status) {
+    if (isPostgresConnected && pool) {
+      const res = await pool.query(
+        'UPDATE incidents SET status = $1, updated_at = NOW() WHERE case_id = $2 RETURNING *',
+        [status, caseId]
+      );
+      return res.rows;
+    }
+    const updated = [];
+    for (const inc of fallbackIncidents.values()) {
+      if (inc.case_id === caseId) {
+        inc.status = status;
+        inc.updated_at = new Date().toISOString();
+        updated.push(inc);
+      }
+    }
+    return updated;
   },
 
   // ==========================================
@@ -1072,32 +1470,60 @@ const db = {
         jurId = jurRes.rows[0].id;
       }
 
-      // Insert versioned boundary with PostGIS geometry
-      await pool.query(
-        `INSERT INTO jurisdiction_boundaries (
-          jurisdiction_id,
-          version,
-          geometry,
-          valid_from,
-          valid_until,
-          metadata
-        ) VALUES (
-          $1,
-          $2,
-          ST_SetSRID(ST_GeomFromGeoJSON($3), 4326),
-          $4,
-          $5,
-          $6
-        )`,
-        [
-          jurId,
-          version,
-          JSON.stringify(geometry),
-          validFrom,
-          validUntil,
-          JSON.stringify(metadata),
-        ]
-      );
+      // Insert versioned boundary with PostGIS geometry or JSONB
+      if (hasPostgis) {
+        await pool.query(
+          `INSERT INTO jurisdiction_boundaries (
+            jurisdiction_id,
+            version,
+            geometry,
+            valid_from,
+            valid_until,
+            metadata
+          ) VALUES (
+            $1,
+            $2,
+            ST_SetSRID(ST_GeomFromGeoJSON($3), 4326),
+            $4,
+            $5,
+            $6
+          )`,
+          [
+            jurId,
+            version,
+            JSON.stringify(geometry),
+            validFrom,
+            validUntil,
+            JSON.stringify(metadata),
+          ]
+        );
+      } else {
+        await pool.query(
+          `INSERT INTO jurisdiction_boundaries (
+            jurisdiction_id,
+            version,
+            geometry,
+            valid_from,
+            valid_until,
+            metadata
+          ) VALUES (
+            $1,
+            $2,
+            $3::jsonb,
+            $4,
+            $5,
+            $6
+          )`,
+          [
+            jurId,
+            version,
+            JSON.stringify(geometry),
+            validFrom,
+            validUntil,
+            JSON.stringify(metadata),
+          ]
+        );
+      }
       return { jurisdictionId: jurId, version };
     }
 
@@ -1122,32 +1548,70 @@ const db = {
   },
 
   /**
-   * High-performance point-in-polygon spatial & temporal query using PostGIS ST_Covers
+   * High-performance point-in-polygon spatial & temporal query using PostGIS ST_Covers or native PostgreSQL JSONB
    */
   async findJurisdictionsByPointAndTimestamp(lng, lat, reportTime) {
     const targetDate = new Date(reportTime);
 
     if (isPostgresConnected && pool) {
-      // Boundary-safe PostGIS spatial predicate: ST_Covers
-      // Checks point-in-polygon and temporal validity window
-      const query = `
-        SELECT 
-          jb.id AS boundary_id,
-          jb.version,
-          jb.valid_from,
-          jb.valid_until,
-          j.id AS jurisdiction_id,
-          j.code AS jurisdiction_code,
-          j.name AS jurisdiction_name,
-          j.type AS jurisdiction_type
-        FROM jurisdiction_boundaries jb
-        JOIN jurisdictions j ON jb.jurisdiction_id = j.id
-        WHERE ST_Covers(jb.geometry, ST_SetSRID(ST_MakePoint($1, $2), 4326))
-          AND jb.valid_from <= $3
-          AND (jb.valid_until IS NULL OR $3 < jb.valid_until)
-      `;
-      const res = await pool.query(query, [lng, lat, targetDate.toISOString()]);
-      return res.rows;
+      if (hasPostgis) {
+        // Boundary-safe PostGIS spatial predicate: ST_Covers
+        // Checks point-in-polygon and temporal validity window
+        const query = `
+          SELECT 
+            jb.id AS boundary_id,
+            jb.version,
+            jb.valid_from,
+            jb.valid_until,
+            j.id AS jurisdiction_id,
+            j.code AS jurisdiction_code,
+            j.name AS jurisdiction_name,
+            j.type AS jurisdiction_type
+          FROM jurisdiction_boundaries jb
+          JOIN jurisdictions j ON jb.jurisdiction_id = j.id
+          WHERE ST_Covers(jb.geometry, ST_SetSRID(ST_MakePoint($1, $2), 4326))
+            AND jb.valid_from <= $3
+            AND (jb.valid_until IS NULL OR $3 < jb.valid_until)
+        `;
+        const res = await pool.query(query, [lng, lat, targetDate.toISOString()]);
+        return res.rows;
+      } else {
+        // Native PostgreSQL JSONB query with point-in-polygon
+        const query = `
+          SELECT 
+            jb.id AS boundary_id,
+            jb.version,
+            jb.valid_from,
+            jb.valid_until,
+            jb.geometry,
+            j.id AS jurisdiction_id,
+            j.code AS jurisdiction_code,
+            j.name AS jurisdiction_name,
+            j.type AS jurisdiction_type
+          FROM jurisdiction_boundaries jb
+          JOIN jurisdictions j ON jb.jurisdiction_id = j.id
+          WHERE jb.valid_from <= $1
+            AND (jb.valid_until IS NULL OR $1 < jb.valid_until)
+        `;
+        const res = await pool.query(query, [targetDate.toISOString()]);
+        const matches = [];
+        for (const row of res.rows) {
+          const geom = typeof row.geometry === 'string' ? JSON.parse(row.geometry) : row.geometry;
+          if (geom && geom.coordinates && isPointInPolygon([lng, lat], geom.coordinates)) {
+            matches.push({
+              boundary_id: row.boundary_id,
+              version: row.version,
+              valid_from: row.valid_from instanceof Date ? row.valid_from.toISOString() : row.valid_from,
+              valid_until: row.valid_until ? (row.valid_until instanceof Date ? row.valid_until.toISOString() : row.valid_until) : null,
+              jurisdiction_id: row.jurisdiction_id,
+              jurisdiction_code: row.jurisdiction_code,
+              jurisdiction_name: row.jurisdiction_name,
+              jurisdiction_type: row.jurisdiction_type,
+            });
+          }
+        }
+        return matches;
+      }
     }
 
     // In-memory fallback ray-casting query
@@ -1968,10 +2432,24 @@ const db = {
         category: row.category,
         description: row.description,
         locationAvailable: row.location_status === 'VERIFIED_COORDINATES' && row.latitude !== null,
-        coordinates: { latitude: row.latitude, longitude: row.longitude },
+        coordinates: {
+          latitude: row.latitude !== null && row.latitude !== undefined ? parseFloat(row.latitude) : null,
+          longitude: row.longitude !== null && row.longitude !== undefined ? parseFloat(row.longitude) : null,
+        },
         createdAt: row.created_at,
         routingStatus: row.routing_status,
-        reviewReasons: typeof row.review_reasons === 'string' ? JSON.parse(row.review_reasons) : (row.review_reasons || []),
+        reviewReasons: (() => {
+          if (Array.isArray(row.review_reasons)) return row.review_reasons;
+          if (typeof row.review_reasons === 'string') {
+            try {
+              const parsed = JSON.parse(row.review_reasons);
+              return Array.isArray(parsed) ? parsed : [parsed];
+            } catch (_) {
+              return [row.review_reasons];
+            }
+          }
+          return [];
+        })(),
         jurisdictionName: row.jurisdiction_name || null,
         authoritySuggested: row.authority_suggested_code
           ? { code: row.authority_suggested_code, name: row.authority_suggested_name }
@@ -2005,7 +2483,10 @@ const db = {
             category: report.category,
             description: report.description,
             locationAvailable: report.location_status === 'VERIFIED_COORDINATES' && report.latitude !== null,
-            coordinates: { latitude: report.latitude, longitude: report.longitude },
+            coordinates: {
+              latitude: report.latitude !== null && report.latitude !== undefined ? parseFloat(report.latitude) : null,
+              longitude: report.longitude !== null && report.longitude !== undefined ? parseFloat(report.longitude) : null,
+            },
             createdAt: report.created_at,
             routingStatus: snap.routing_status,
             reviewReasons: snap.review_reasons || [],

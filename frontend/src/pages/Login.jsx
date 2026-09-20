@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { LogIn, AlertCircle, Activity, HelpCircle, X } from 'lucide-react';
+import { LogIn, AlertCircle, Activity, HelpCircle, X, ShieldAlert } from 'lucide-react';
 
 export const Login = () => {
   const [email, setEmail] = useState('');
@@ -10,6 +10,8 @@ export const Login = () => {
   const [showForgotModal, setShowForgotModal] = useState(false);
   const { login, loading, authError } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const from = location.state?.from?.pathname || '/';
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -22,7 +24,7 @@ export const Login = () => {
 
     const result = await login(email.trim(), password);
     if (result.success) {
-      navigate('/');
+      navigate(from, { replace: true });
     }
   };
 
@@ -66,6 +68,49 @@ export const Login = () => {
             Sign in to your account
           </h2>
         </div>
+
+        {from.startsWith('/staff') && (
+          <div
+            style={{
+              marginTop: '1rem',
+              padding: '0.75rem 0.9rem',
+              background: 'rgba(245, 158, 11, 0.12)',
+              border: '1px solid rgba(245, 158, 11, 0.35)',
+              borderRadius: '8px',
+              fontSize: '0.85rem',
+              color: '#fef08a',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.6rem',
+            }}
+          >
+            <ShieldAlert size={18} color="#f59e0b" style={{ flexShrink: 0 }} />
+            <div>
+              Staff authorization required for <strong>{from}</strong>.
+              <br />
+              <button
+                type="button"
+                onClick={() => {
+                  setEmail('staff@mysuru.civicflow.in');
+                  setPassword('CivicFlow@2026');
+                }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#93c5fd',
+                  textDecoration: 'underline',
+                  cursor: 'pointer',
+                  padding: 0,
+                  fontSize: '0.82rem',
+                  fontWeight: 600,
+                  marginTop: '0.2rem',
+                }}
+              >
+                Auto-fill Staff Credentials (staff@mysuru.civicflow.in)
+              </button>
+            </div>
+          </div>
+        )}
 
         {displayError && (
           <div className="alert alert-error" style={{ marginTop: '1rem' }}>
