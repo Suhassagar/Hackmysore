@@ -19,15 +19,14 @@ import {
   Globe,
   RefreshCw,
   FileText,
-  AlertTriangle,
   History,
-  Check,
   X,
+  ShieldAlert,
 } from 'lucide-react';
 
 export const CaseDetail = () => {
   const { id } = useParams();
-  const { token, user } = useAuth();
+  const { token, user, role } = useAuth();
 
   const [caseItem, setCaseItem] = useState(null);
   const [timeline, setTimeline] = useState([]);
@@ -145,7 +144,7 @@ export const CaseDetail = () => {
       );
 
       if (res.ok) {
-        setActionSuccess(`Case successfully updated to ${toStatus}.`);
+        setActionSuccess(`Case successfully moved to ${toStatus}.`);
         setShowOnHoldModal(false);
         setShowResolveModal(false);
         fetchCase();
@@ -181,10 +180,10 @@ export const CaseDetail = () => {
         setNoteContent('');
         fetchCase();
       } else {
-        setActionError(res.data?.message || 'Failed to add note.');
+        setActionError(res.data?.message || 'Failed to record note.');
       }
     } catch (err) {
-      setActionError(err.message || 'Error adding note.');
+      setActionError(err.message || 'Error recording operational note.');
     } finally {
       setAddingNote(false);
     }
@@ -194,323 +193,334 @@ export const CaseDetail = () => {
     switch (status) {
       case 'UNASSIGNED':
         return (
-          <span className="inline-flex items-center gap-1 px-3 py-1 text-xs font-semibold rounded-full bg-slate-100 text-slate-700 border border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700">
-            <AlertCircle className="w-3.5 h-3.5 text-slate-500" />
+          <span className="status-pill status-pill-unassigned">
+            <AlertCircle size={12} />
             Unassigned
           </span>
         );
       case 'ASSIGNED':
         return (
-          <span className="inline-flex items-center gap-1 px-3 py-1 text-xs font-semibold rounded-full bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:border-blue-800">
-            <UserCheck className="w-3.5 h-3.5 text-blue-500" />
+          <span className="status-pill status-pill-assigned">
+            <UserCheck size={12} />
             Assigned
           </span>
         );
       case 'ACKNOWLEDGED':
         return (
-          <span className="inline-flex items-center gap-1 px-3 py-1 text-xs font-semibold rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-900/40 dark:text-indigo-300 dark:border-indigo-800">
-            <Clock className="w-3.5 h-3.5 text-indigo-500" />
+          <span className="status-pill status-pill-acknowledged">
+            <Clock size={12} />
             Acknowledged
           </span>
         );
       case 'IN_PROGRESS':
         return (
-          <span className="inline-flex items-center gap-1 px-3 py-1 text-xs font-semibold rounded-full bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:border-amber-800">
-            <RefreshCw className="w-3.5 h-3.5 text-amber-500 animate-spin-slow" />
+          <span className="status-pill status-pill-in-progress">
+            <RefreshCw size={12} className="spinner" style={{ width: 12, height: 12, borderWidth: 2 }} />
             In Progress
           </span>
         );
       case 'ON_HOLD':
         return (
-          <span className="inline-flex items-center gap-1 px-3 py-1 text-xs font-semibold rounded-full bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-900/40 dark:text-purple-300 dark:border-purple-800">
-            <PauseCircle className="w-3.5 h-3.5 text-purple-500" />
+          <span className="status-pill status-pill-on-hold">
+            <PauseCircle size={12} />
             On Hold
           </span>
         );
       case 'RESOLVED':
         return (
-          <span className="inline-flex items-center gap-1 px-3 py-1 text-xs font-semibold rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-300 dark:border-emerald-800">
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+          <span className="status-pill status-pill-resolved">
+            <CheckCircle2 size={12} />
             Resolved
           </span>
         );
       case 'CLOSED':
         return (
-          <span className="inline-flex items-center gap-1 px-3 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-700 border border-gray-300 dark:bg-gray-800 dark:text-gray-300">
+          <span className="status-pill status-pill-closed">
             Closed
           </span>
         );
       default:
         return (
-          <span className="inline-flex items-center gap-1 px-3 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-700">
+          <span className="status-pill" style={{ background: 'rgba(255, 255, 255, 0.1)', color: 'var(--text-main)' }}>
             {status}
           </span>
         );
     }
   };
 
+  if (role !== 'STAFF' && role !== 'ADMIN') {
+    return (
+      <div className="cases-page-container">
+        <div className="card" style={{ maxWidth: '540px', margin: '4rem auto', textAlign: 'center', padding: '2.5rem' }}>
+          <ShieldAlert size={48} color="#ef4444" style={{ margin: '0 auto 1rem auto' }} />
+          <h2>Access Restricted</h2>
+          <p style={{ color: 'var(--text-muted)', marginTop: '0.5rem' }}>
+            Only designated municipal staff and administrators have permission to access operational cases.
+          </p>
+          <div style={{ marginTop: '1.5rem' }}>
+            <Link to="/" className="btn btn-primary">
+              Return to Dashboard
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (loading) {
     return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 text-center">
-        <RefreshCw className="w-8 h-8 animate-spin mx-auto text-blue-500 mb-3" />
-        <p className="text-gray-500">Loading case details and audit history...</p>
+      <div className="cases-page-container" style={{ textAlign: 'center', padding: '6rem 0' }}>
+        <div className="spinner" style={{ margin: '0 auto 1rem auto' }} />
+        <p style={{ color: 'var(--text-muted)' }}>Loading operational case details & timeline...</p>
       </div>
     );
   }
 
   if (error || !caseItem) {
     return (
-      <div className="max-w-3xl mx-auto px-4 py-16 text-center">
-        <AlertCircle className="w-12 h-12 mx-auto text-red-500 mb-3" />
-        <h2 className="text-xl font-bold text-gray-900 dark:text-white">Case Not Available</h2>
-        <p className="text-gray-500 mt-2">{error || 'Case record could not be loaded.'}</p>
-        <Link
-          to="/staff/cases"
-          className="inline-flex items-center gap-2 mt-6 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Back to Case Queue
-        </Link>
+      <div className="cases-page-container">
+        <div className="card" style={{ maxWidth: '560px', margin: '4rem auto', textAlign: 'center', padding: '2.5rem' }}>
+          <AlertCircle size={48} color="#ef4444" style={{ margin: '0 auto 1rem auto' }} />
+          <h2>Case Record Not Available</h2>
+          <p style={{ color: 'var(--text-muted)', marginTop: '0.5rem' }}>{error || 'Unable to retrieve case.'}</p>
+          <div style={{ marginTop: '1.5rem' }}>
+            <Link to="/staff/cases" className="btn btn-primary">
+              <ArrowLeft size={16} /> Back to Case Queue
+            </Link>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+    <div className="cases-page-container">
       {/* Top Navigation & Header */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-gray-200 dark:border-gray-800 pb-5">
-        <div>
-          <Link
-            to="/staff/cases"
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 mb-2"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            Back to Case Queue
-          </Link>
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold font-mono text-gray-900 dark:text-white">
-              {caseItem.case_number}
-            </h1>
-            {getStatusBadge(caseItem.status)}
-          </div>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            Created: {new Date(caseItem.created_at).toLocaleString()} • Operational Incident ID: {caseItem.id}
-          </p>
-        </div>
+      <div style={{ marginBottom: '1.5rem', paddingBottom: '1.25rem', borderBottom: '1px solid var(--border-subtle)' }}>
+        <Link
+          to="/staff/cases"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}
+        >
+          <ArrowLeft size={14} /> Back to Case Queue
+        </Link>
 
-        <div className="flex items-center gap-3">
-          <Link
-            to={`/reports/${caseItem.report_id}`}
-            className="px-3.5 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors shadow-sm"
-          >
-            View Citizen Report
-          </Link>
-          <button
-            onClick={fetchCase}
-            className="p-2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg"
-            title="Refresh Case"
-          >
-            <RefreshCw className="w-4 h-4" />
-          </button>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <h1 style={{ fontSize: '1.75rem', fontWeight: 800, fontFamily: 'monospace', color: '#60a5fa', margin: 0 }}>
+                {caseItem.case_number}
+              </h1>
+              {getStatusBadge(caseItem.status)}
+            </div>
+            <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+              Created: {new Date(caseItem.created_at).toLocaleString()} • Incident ID: <span style={{ fontFamily: 'monospace' }}>{caseItem.id}</span>
+            </p>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <Link
+              to={`/reports/${caseItem.report_id}`}
+              className="btn btn-outline"
+              style={{ fontSize: '0.85rem', padding: '0.5rem 1rem' }}
+            >
+              View Citizen Report
+            </Link>
+            <button
+              onClick={fetchCase}
+              className="btn btn-outline"
+              style={{ padding: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              title="Refresh Case"
+            >
+              <RefreshCw size={15} />
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Alert Messages */}
+      {/* Alerts */}
       {actionSuccess && (
-        <div className="p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-sm flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+        <div className="alert alert-success">
+          <CheckCircle2 size={18} />
           <span>{actionSuccess}</span>
         </div>
       )}
       {actionError && (
-        <div className="p-4 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-300 text-sm flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 flex-shrink-0" />
+        <div className="alert alert-error">
+          <AlertCircle size={18} />
           <span>{actionError}</span>
         </div>
       )}
 
       {/* Operational Actions Toolbar */}
-      <div className="bg-gradient-to-r from-blue-50 via-indigo-50 to-purple-50 dark:from-gray-800 dark:via-gray-800 dark:to-gray-800 border border-blue-100 dark:border-gray-700 rounded-2xl p-5 shadow-sm">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div
+        className="card"
+        style={{
+          background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.9) 0%, rgba(17, 24, 39, 0.95) 100%)',
+          borderColor: 'rgba(59, 130, 246, 0.3)',
+          marginBottom: '2rem',
+          padding: '1.5rem',
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
           <div>
-            <span className="text-xs font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">
-              Operational Actions
-            </span>
-            <h3 className="text-base font-semibold text-gray-900 dark:text-white mt-0.5">
-              Current Workflow Status: {caseItem.status}
+            <div style={{ fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#60a5fa', marginBottom: '0.2rem' }}>
+              Operational Actions Toolbar
+            </div>
+            <h3 style={{ fontSize: '1.15rem', fontWeight: 700, margin: 0, color: 'var(--text-main)' }}>
+              Current Status: {caseItem.status}
             </h3>
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              Only authorized staff in {caseItem.department_name || caseItem.department_code} may execute state transitions.
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+              Department Ownership: <strong>{caseItem.department_name || caseItem.department_code || 'General'}</strong>
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5">
-            {/* UNASSIGNED -> ASSIGN */}
+          {/* Action buttons matching status */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.6rem', alignItems: 'center' }}>
             {caseItem.status === 'UNASSIGNED' && (
-              <button
-                onClick={openAssignModal}
-                className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 shadow-sm"
-              >
-                <UserPlus className="w-4 h-4" />
-                Assign Staff
+              <button onClick={openAssignModal} className="btn btn-primary" style={{ fontSize: '0.85rem' }}>
+                <UserPlus size={15} /> Assign Staff Member
               </button>
             )}
 
-            {/* ASSIGNED -> ACKNOWLEDGE */}
             {caseItem.status === 'ASSIGNED' && (
               <>
                 <button
                   onClick={() => handleStatusTransition('ACKNOWLEDGED', { note: 'Staff acknowledged receipt of case.' })}
                   disabled={submittingStatus}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 shadow-sm disabled:opacity-50"
+                  className="btn"
+                  style={{ background: '#4f46e5', color: '#fff', fontSize: '0.85rem' }}
                 >
-                  <Clock className="w-4 h-4" />
-                  Acknowledge Case
+                  <Clock size={15} /> Acknowledge Case
                 </button>
-                <button
-                  onClick={openAssignModal}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-medium hover:bg-gray-50 shadow-sm"
-                >
-                  <UserCheck className="w-4 h-4" />
-                  Reassign
+                <button onClick={openAssignModal} className="btn btn-outline" style={{ fontSize: '0.85rem' }}>
+                  <UserCheck size={15} /> Reassign
                 </button>
               </>
             )}
 
-            {/* ACKNOWLEDGED -> START WORK */}
             {caseItem.status === 'ACKNOWLEDGED' && (
               <>
                 <button
                   onClick={() => handleStatusTransition('IN_PROGRESS', { note: 'Field team dispatched and active on site.' })}
                   disabled={submittingStatus}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 shadow-sm disabled:opacity-50"
+                  className="btn"
+                  style={{ background: '#d97706', color: '#fff', fontSize: '0.85rem' }}
                 >
-                  <PlayCircle className="w-4 h-4" />
-                  Start Work (In Progress)
+                  <PlayCircle size={15} /> Start Work (In Progress)
                 </button>
-                <button
-                  onClick={openAssignModal}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-medium hover:bg-gray-50 shadow-sm"
-                >
-                  <UserCheck className="w-4 h-4" />
-                  Reassign
+                <button onClick={openAssignModal} className="btn btn-outline" style={{ fontSize: '0.85rem' }}>
+                  <UserCheck size={15} /> Reassign
                 </button>
               </>
             )}
 
-            {/* IN_PROGRESS -> ON_HOLD or RESOLVED */}
             {caseItem.status === 'IN_PROGRESS' && (
               <>
                 <button
                   onClick={() => setShowOnHoldModal(true)}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 shadow-sm"
+                  className="btn"
+                  style={{ background: '#7c3aed', color: '#fff', fontSize: '0.85rem' }}
                 >
-                  <PauseCircle className="w-4 h-4" />
-                  Put On Hold
+                  <PauseCircle size={15} /> Put On Hold
                 </button>
                 <button
                   onClick={() => setShowResolveModal(true)}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 shadow-sm"
+                  className="btn"
+                  style={{ background: '#059669', color: '#fff', fontSize: '0.85rem' }}
                 >
-                  <CheckCircle2 className="w-4 h-4" />
-                  Mark Resolved
+                  <CheckCircle2 size={15} /> Mark Resolved
                 </button>
-                <button
-                  onClick={openAssignModal}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-medium hover:bg-gray-50 shadow-sm"
-                >
-                  <UserCheck className="w-4 h-4" />
-                  Reassign
+                <button onClick={openAssignModal} className="btn btn-outline" style={{ fontSize: '0.85rem' }}>
+                  <UserCheck size={15} /> Reassign
                 </button>
               </>
             )}
 
-            {/* ON_HOLD -> RESUME WORK */}
             {caseItem.status === 'ON_HOLD' && (
               <>
                 <button
-                  onClick={() => handleStatusTransition('IN_PROGRESS', { note: 'Obstacle cleared, work resumed by crew.' })}
+                  onClick={() => handleStatusTransition('IN_PROGRESS', { note: 'Obstacle cleared; work resumed on site.' })}
                   disabled={submittingStatus}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 shadow-sm disabled:opacity-50"
+                  className="btn"
+                  style={{ background: '#d97706', color: '#fff', fontSize: '0.85rem' }}
                 >
-                  <PlayCircle className="w-4 h-4" />
-                  Resume Work
+                  <PlayCircle size={15} /> Resume Work
                 </button>
-                <button
-                  onClick={openAssignModal}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-medium hover:bg-gray-50 shadow-sm"
-                >
-                  <UserCheck className="w-4 h-4" />
-                  Reassign
+                <button onClick={openAssignModal} className="btn btn-outline" style={{ fontSize: '0.85rem' }}>
+                  <UserCheck size={15} /> Reassign
                 </button>
               </>
             )}
 
-            {/* RESOLVED */}
             {caseItem.status === 'RESOLVED' && (
-              <div className="text-xs font-semibold px-3 py-2 rounded-lg bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                Work completed by staff. Awaiting verification in later phase.
+              <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#6ee7b7', background: 'rgba(16, 185, 129, 0.15)', padding: '0.45rem 0.9rem', borderRadius: 'var(--radius-md)', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
+                ✓ Work complete by staff. Awaiting independent verification in Phase 8.
               </div>
             )}
           </div>
         </div>
       </div>
 
-      {/* Main Grid: Details + Timeline */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column (2 Cols): Case Information & Operational Notes */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Section 1: Problem & Location Details */}
-          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-6 shadow-sm">
-            <h2 className="text-base font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-              <FileText className="w-4 h-4 text-blue-600" />
-              Report & Operational Context
-            </h2>
+      {/* Main 2-Column Content */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '1.75rem', alignItems: 'start' }}>
+        {/* Column 1: Details & Notes */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          {/* Section: Problem Description & Location */}
+          <div className="card">
+            <h3 className="card-title">
+              <FileText size={18} color="#3b82f6" /> Report Information
+            </h3>
 
-            <div className="space-y-4">
+            <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div>
-                <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Citizen Problem Description</span>
-                <p className="mt-1 text-sm text-gray-800 dark:text-gray-200 leading-relaxed bg-gray-50 dark:bg-gray-750 p-3.5 rounded-xl border border-gray-100 dark:border-gray-700">
+                <span style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 700 }}>
+                  Citizen Description
+                </span>
+                <p style={{ marginTop: '0.35rem', background: 'var(--bg-primary)', padding: '0.85rem 1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)', color: 'var(--text-main)', fontSize: '0.9rem', lineHeight: 1.5 }}>
                   {caseItem.report_description || 'No description provided.'}
                 </p>
               </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-2">
-                <div>
-                  <span className="text-[11px] font-semibold text-gray-400 uppercase">Category</span>
-                  <p className="text-sm font-bold text-blue-600 dark:text-blue-400 mt-0.5">
-                    {caseItem.category || 'POTHOLE'}
-                  </p>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.75rem' }}>
+                <div style={{ background: 'var(--bg-surface-elevated)', padding: '0.75rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Category</span>
+                  <div style={{ fontWeight: 700, color: '#60a5fa', fontSize: '0.9rem', marginTop: '0.2rem' }}>
+                    {caseItem.category || 'CIVIC ISSUE'}
+                  </div>
                 </div>
-                <div>
-                  <span className="text-[11px] font-semibold text-gray-400 uppercase">Jurisdiction</span>
-                  <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 mt-0.5">
+
+                <div style={{ background: 'var(--bg-surface-elevated)', padding: '0.75rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Jurisdiction</span>
+                  <div style={{ fontWeight: 700, color: 'var(--text-main)', fontSize: '0.9rem', marginTop: '0.2rem' }}>
                     {caseItem.jurisdiction_name || 'Ward 42'}
-                  </p>
+                  </div>
                 </div>
-                <div>
-                  <span className="text-[11px] font-semibold text-gray-400 uppercase">Coordinates</span>
-                  <p className="text-sm font-mono text-gray-800 dark:text-gray-200 mt-0.5">
+
+                <div style={{ background: 'var(--bg-surface-elevated)', padding: '0.75rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Coordinates</span>
+                  <div style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--text-main)', fontSize: '0.85rem', marginTop: '0.2rem' }}>
                     {caseItem.latitude?.toFixed(4)}, {caseItem.longitude?.toFixed(4)}
-                  </p>
+                  </div>
                 </div>
-                <div>
-                  <span className="text-[11px] font-semibold text-gray-400 uppercase">Location Status</span>
-                  <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 mt-1">
-                    {caseItem.location_status || 'VERIFIED'}
-                  </p>
+
+                <div style={{ background: 'var(--bg-surface-elevated)', padding: '0.75rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Priority</span>
+                  <div style={{ fontWeight: 700, color: '#f59e0b', fontSize: '0.85rem', marginTop: '0.2rem' }}>
+                    {caseItem.priority || 'MEDIUM'}
+                  </div>
                 </div>
               </div>
 
-              {/* Photo thumbnail if present */}
               {caseItem.photo_url && (
-                <div className="pt-2">
-                  <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Citizen Photo Evidence</span>
-                  <div className="mt-2">
+                <div>
+                  <span style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 700 }}>
+                    Citizen Photo Evidence
+                  </span>
+                  <div style={{ marginTop: '0.5rem' }}>
                     <img
                       src={caseItem.photo_url}
-                      alt="Citizen report visual evidence"
-                      className="w-full max-h-64 object-cover rounded-xl border border-gray-200 dark:border-gray-700"
+                      alt="Citizen evidence"
+                      style={{ width: '100%', maxHeight: '240px', objectFit: 'cover', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}
                     />
                   </div>
                 </div>
@@ -518,129 +528,116 @@ export const CaseDetail = () => {
             </div>
           </div>
 
-          {/* Section 2: Department Ownership & Staff Assignment */}
-          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-6 shadow-sm">
-            <h2 className="text-base font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-              <Building2 className="w-4 h-4 text-indigo-600" />
-              Ownership & Staff Assignment
-            </h2>
+          {/* Section: Operational Department & Assignment */}
+          <div className="card">
+            <h3 className="card-title">
+              <Building2 size={18} color="#818cf8" /> Governance & Operating Unit
+            </h3>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="p-3.5 rounded-xl bg-gray-50 dark:bg-gray-750 border border-gray-100 dark:border-gray-700">
-                <span className="text-[11px] font-semibold text-gray-400 uppercase">Responsible Authority</span>
-                <p className="text-sm font-bold text-gray-900 dark:text-white mt-1">
-                  {caseItem.authority_name} ({caseItem.authority_code})
-                </p>
-                <p className="text-xs text-gray-500 mt-0.5">Primary civic governance authority</p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.85rem', marginTop: '1rem' }}>
+              <div style={{ background: 'var(--bg-surface-elevated)', padding: '0.85rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Responsible Authority</span>
+                <div style={{ fontWeight: 700, color: 'var(--text-main)', fontSize: '0.95rem', marginTop: '0.2rem' }}>
+                  {caseItem.authority_name || caseItem.authority_code}
+                </div>
               </div>
 
-              <div className="p-3.5 rounded-xl bg-gray-50 dark:bg-gray-750 border border-gray-100 dark:border-gray-700">
-                <span className="text-[11px] font-semibold text-gray-400 uppercase">Operating Department</span>
-                <p className="text-sm font-bold text-gray-900 dark:text-white mt-1">
-                  {caseItem.department_name} ({caseItem.department_code})
-                </p>
-                <p className="text-xs text-gray-500 mt-0.5">Assigned civic maintenance team</p>
+              <div style={{ background: 'var(--bg-surface-elevated)', padding: '0.85rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Operating Department</span>
+                <div style={{ fontWeight: 700, color: 'var(--text-main)', fontSize: '0.95rem', marginTop: '0.2rem' }}>
+                  {caseItem.department_name || caseItem.department_code}
+                </div>
               </div>
 
-              <div className="p-3.5 rounded-xl bg-gray-50 dark:bg-gray-750 border border-gray-100 dark:border-gray-700">
-                <span className="text-[11px] font-semibold text-gray-400 uppercase">Assigned Staff Officer</span>
-                <p className="text-sm font-bold text-gray-900 dark:text-white mt-1">
-                  {caseItem.assigned_to_name ? (
-                    <span className="text-blue-600 dark:text-blue-400">{caseItem.assigned_to_name}</span>
-                  ) : (
-                    <span className="text-amber-600 dark:text-amber-400 font-normal">Unassigned</span>
-                  )}
-                </p>
-                {caseItem.assigned_at && (
-                  <p className="text-[11px] text-gray-500 mt-0.5">
-                    Assigned: {new Date(caseItem.assigned_at).toLocaleString()}
-                  </p>
-                )}
+              <div style={{ background: 'var(--bg-surface-elevated)', padding: '0.85rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Assigned Officer</span>
+                <div style={{ fontWeight: 700, color: caseItem.assigned_to_name ? '#60a5fa' : '#f59e0b', fontSize: '0.95rem', marginTop: '0.2rem' }}>
+                  {caseItem.assigned_to_name || 'Awaiting assignment'}
+                </div>
               </div>
 
-              <div className="p-3.5 rounded-xl bg-gray-50 dark:bg-gray-750 border border-gray-100 dark:border-gray-700">
-                <span className="text-[11px] font-semibold text-gray-400 uppercase">Timestamps</span>
-                <div className="text-xs text-gray-600 dark:text-gray-300 space-y-1 mt-1 font-mono">
+              <div style={{ background: 'var(--bg-surface-elevated)', padding: '0.85rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Timestamps</span>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.2rem', fontFamily: 'monospace', lineHeight: 1.4 }}>
+                  {caseItem.assigned_at && <div>Assigned: {new Date(caseItem.assigned_at).toLocaleTimeString()}</div>}
                   {caseItem.acknowledged_at && <div>Ack: {new Date(caseItem.acknowledged_at).toLocaleTimeString()}</div>}
                   {caseItem.started_at && <div>Start: {new Date(caseItem.started_at).toLocaleTimeString()}</div>}
-                  {caseItem.resolved_at && <div className="text-emerald-600">Resolved: {new Date(caseItem.resolved_at).toLocaleTimeString()}</div>}
-                  {!caseItem.acknowledged_at && <div className="text-gray-400">No operational actions yet</div>}
+                  {caseItem.resolved_at && <div style={{ color: '#6ee7b7' }}>Resolved: {new Date(caseItem.resolved_at).toLocaleTimeString()}</div>}
+                  {!caseItem.acknowledged_at && <div>No operational timestamps</div>}
                 </div>
               </div>
             </div>
 
-            {/* If On Hold reason exists */}
+            {/* Hold Reason box */}
             {caseItem.on_hold_reason && (
-              <div className="mt-4 p-3.5 rounded-xl bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800 text-purple-900 dark:text-purple-300">
-                <div className="flex items-center gap-2 font-semibold text-xs uppercase tracking-wider">
-                  <PauseCircle className="w-4 h-4 text-purple-600" />
+              <div style={{ marginTop: '1rem', padding: '0.85rem', background: 'rgba(168, 85, 247, 0.15)', border: '1px solid rgba(168, 85, 247, 0.3)', borderRadius: 'var(--radius-md)' }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#d8b4fe', textTransform: 'uppercase' }}>
                   On-Hold Reason: {caseItem.on_hold_reason}
                 </div>
                 {caseItem.on_hold_notes && (
-                  <p className="text-xs mt-1 text-purple-800 dark:text-purple-200">
+                  <p style={{ fontSize: '0.85rem', color: '#e9d5ff', marginTop: '0.25rem' }}>
                     "{caseItem.on_hold_notes}"
                   </p>
                 )}
               </div>
             )}
 
-            {/* If Resolution note exists */}
+            {/* Resolution note box */}
             {caseItem.resolution_notes && (
-              <div className="mt-4 p-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-emerald-900 dark:text-emerald-300">
-                <div className="flex items-center gap-2 font-semibold text-xs uppercase tracking-wider">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                  Resolution Note (Work Claimed by Staff)
+              <div style={{ marginTop: '1rem', padding: '0.85rem', background: 'rgba(16, 185, 129, 0.15)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: 'var(--radius-md)' }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#6ee7b7', textTransform: 'uppercase' }}>
+                  Resolution Note (Staff Claim)
                 </div>
-                <p className="text-xs mt-1 text-emerald-800 dark:text-emerald-200">
+                <p style={{ fontSize: '0.85rem', color: '#d1fae5', marginTop: '0.25rem' }}>
                   "{caseItem.resolution_notes}"
                 </p>
-                <p className="text-[11px] text-emerald-700 dark:text-emerald-400 mt-1 italic">
-                  Note: RESOLVED ≠ VERIFIED. Independent verification will occur in subsequent phase.
-                </p>
+                <div style={{ fontSize: '0.72rem', color: '#a7f3d0', marginTop: '0.25rem', fontStyle: 'italic' }}>
+                  RESOLVED ≠ VERIFIED. Verification occurs in subsequent phase.
+                </div>
               </div>
             )}
           </div>
 
-          {/* Section 3: Add Operational Note */}
-          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-6 shadow-sm">
-            <h2 className="text-base font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
-              <Send className="w-4 h-4 text-blue-600" />
-              Add Auditable Staff Note
-            </h2>
-            <p className="text-xs text-gray-500 mb-4">
-              Add operational updates, field team dispatch logs, inspection notes, or citizen-visible advisories.
+          {/* Section: Add Operational Staff Note */}
+          <div className="card">
+            <h3 className="card-title">
+              <Send size={18} color="#06b6d4" /> Add Auditable Field Note
+            </h3>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', marginTop: '0.2rem', marginBottom: '1rem' }}>
+              Append timestamped field logs, inspection findings, or citizen-visible advisories.
             </p>
 
-            <form onSubmit={handleAddNote} className="space-y-3">
+            <form onSubmit={handleAddNote}>
               <textarea
                 value={noteContent}
                 onChange={(e) => setNoteContent(e.target.value)}
-                placeholder="e.g. Inspection completed. Road surface patching team scheduled for 10:30 AM."
+                placeholder="e.g., Road patching truck dispatched. Sub-base compaction underway."
                 rows={3}
                 required
-                className="w-full p-3 text-sm bg-gray-50 dark:bg-gray-750 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none dark:text-white"
+                className="form-input"
+                style={{ width: '100%', resize: 'vertical' }}
               />
 
-              <div className="flex items-center justify-between">
-                <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300 cursor-pointer">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.85rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
                   <input
                     type="checkbox"
                     checked={isInternalNote}
                     onChange={(e) => setIsInternalNote(e.target.checked)}
-                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                   />
-                  <span className="flex items-center gap-1">
-                    {isInternalNote ? <Lock className="w-3 h-3 text-amber-500" /> : <Globe className="w-3 h-3 text-blue-500" />}
-                    {isInternalNote ? 'Internal staff only (hidden from citizen)' : 'Public update (visible to citizen)'}
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                    {isInternalNote ? <Lock size={13} color="#f59e0b" /> : <Globe size={13} color="#3b82f6" />}
+                    {isInternalNote ? 'Internal only (hidden from citizen)' : 'Public update (visible to citizen)'}
                   </span>
                 </label>
 
                 <button
                   type="submit"
                   disabled={addingNote || !noteContent.trim()}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 shadow-sm disabled:opacity-50"
+                  className="btn btn-primary"
+                  style={{ fontSize: '0.82rem', padding: '0.45rem 1rem' }}
                 >
-                  <Send className="w-3.5 h-3.5" />
+                  <Send size={13} />
                   {addingNote ? 'Recording...' : 'Record Note'}
                 </button>
               </div>
@@ -648,61 +645,56 @@ export const CaseDetail = () => {
           </div>
         </div>
 
-        {/* Right Column: Chronological Audit Event Timeline */}
-        <div className="space-y-4">
-          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-6 shadow-sm sticky top-6">
-            <h2 className="text-base font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-              <History className="w-4 h-4 text-purple-600" />
-              Case Event Timeline
-            </h2>
-            <p className="text-xs text-gray-500 mb-6">
-              Immutable, server-recorded history of every state transition and staff action.
+        {/* Column 2: Immutable Event Timeline */}
+        <div>
+          <div className="card" style={{ position: 'sticky', top: '90px' }}>
+            <h3 className="card-title">
+              <History size={18} color="#a855f7" /> Immutable Audit Timeline
+            </h3>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', marginTop: '0.2rem', marginBottom: '1.25rem' }}>
+              Chronological log of every state transition, assignment change, and staff note.
             </p>
 
             {timeline.length === 0 ? (
-              <p className="text-xs text-gray-400 text-center py-6">No case events recorded yet.</p>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-faint)', textAlign: 'center', padding: '2rem 0' }}>
+                No events recorded yet.
+              </p>
             ) : (
-              <div className="relative pl-6 space-y-6 before:content-[''] before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-gray-200 dark:before:bg-gray-750">
+              <div className="timeline-stream">
                 {timeline.map((ev, idx) => (
-                  <div key={ev.id || idx} className="relative">
-                    {/* Circle marker */}
-                    <div className="absolute -left-[27px] top-1 w-3.5 h-3.5 rounded-full bg-white dark:bg-gray-800 border-2 border-blue-600 flex items-center justify-center">
-                      <div className="w-1.5 h-1.5 rounded-full bg-blue-600" />
-                    </div>
-
-                    <div>
-                      <div className="flex items-center justify-between gap-1">
-                        <span className="font-semibold text-xs text-gray-900 dark:text-white">
+                  <div key={ev.id || idx} className="timeline-node">
+                    <div className="timeline-dot" />
+                    <div className="timeline-content">
+                      <div className="timeline-header">
+                        <span style={{ fontWeight: 700, fontSize: '0.82rem', color: 'var(--text-main)' }}>
                           {ev.event_type.replace(/_/g, ' ')}
                         </span>
-                        <span className="text-[10px] text-gray-400 font-mono">
+                        <span className="timeline-time">
                           {new Date(ev.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </span>
                       </div>
 
                       {ev.from_status && ev.to_status && (
-                        <div className="mt-1 flex items-center gap-1.5 text-[11px] font-mono">
-                          <span className="text-gray-400">{ev.from_status}</span>
-                          <span className="text-gray-400">→</span>
-                          <span className="font-bold text-blue-600 dark:text-blue-400">{ev.to_status}</span>
+                        <div style={{ fontSize: '0.75rem', fontFamily: 'monospace', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                          <span>{ev.from_status}</span> &rarr; <strong style={{ color: '#60a5fa' }}>{ev.to_status}</strong>
                         </div>
                       )}
 
                       {ev.note && (
-                        <p className="mt-1 text-xs text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-750 p-2 rounded-lg border border-gray-100 dark:border-gray-700">
+                        <p className="timeline-body" style={{ marginTop: '0.25rem' }}>
                           {ev.note}
                         </p>
                       )}
 
-                      <div className="flex items-center gap-2 mt-1 text-[10px] text-gray-400">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.35rem', fontSize: '0.72rem', color: 'var(--text-faint)' }}>
                         <span>Actor: {ev.actor_name || 'System'}</span>
                         {ev.metadata?.is_internal && (
-                          <span className="inline-flex items-center gap-0.5 text-amber-600 dark:text-amber-400">
-                            <Lock className="w-2.5 h-2.5" /> Internal
+                          <span style={{ color: '#f59e0b', display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }}>
+                            <Lock size={10} /> Internal
                           </span>
                         )}
                         {ev.metadata?.on_hold_reason && (
-                          <span className="text-purple-600 dark:text-purple-400">
+                          <span style={{ color: '#d8b4fe' }}>
                             Reason: {ev.metadata.on_hold_reason}
                           </span>
                         )}
@@ -718,56 +710,27 @@ export const CaseDetail = () => {
 
       {/* MODAL 1: Assign / Reassign Staff */}
       {showAssignModal && (
-        <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'rgba(0, 0, 0, 0.8)',
-            backdropFilter: 'blur(8px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-            padding: '1.5rem',
-          }}
-        >
-          <div
-            style={{
-              background: '#0f172a',
-              borderRadius: '16px',
-              maxWidth: '480px',
-              width: '100%',
-              padding: '1.75rem',
-              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.8)',
-              border: '1px solid #334155',
-              color: '#fff',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: '1rem', borderBottom: '1px solid #334155' }}>
-              <h3 style={{ fontSize: '1.15rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#fff' }}>
-                <UserCheck className="w-5 h-5 text-blue-500" />
-                Assign Operational Staff
+        <div className="modal-overlay">
+          <div className="modal-card">
+            <div className="modal-header">
+              <h3 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <UserCheck size={20} color="#3b82f6" /> Assign Operational Staff
               </h3>
-              <button
-                onClick={() => setShowAssignModal(false)}
-                style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '0.25rem' }}
-              >
-                <X size={20} />
+              <button onClick={() => setShowAssignModal(false)} className="modal-close-btn">
+                <X size={18} />
               </button>
             </div>
 
-            <form onSubmit={handleAssignSubmit} style={{ marginTop: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <form onSubmit={handleAssignSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#94a3b8', marginBottom: '0.35rem', textTransform: 'uppercase' }}>
+                <label className="form-label">
                   Select Staff Member ({caseItem.department_code || 'MCC'})
                 </label>
                 <select
                   value={selectedStaffId}
                   onChange={(e) => setSelectedStaffId(e.target.value)}
-                  style={{ width: '100%', padding: '0.65rem', borderRadius: '8px', background: '#1e293b', border: '1px solid #475569', color: '#fff', fontSize: '0.88rem' }}
+                  className="cases-filter-select"
+                  style={{ width: '100%' }}
                   required
                 >
                   {staffUsers.length === 0 ? (
@@ -775,7 +738,7 @@ export const CaseDetail = () => {
                   ) : (
                     staffUsers.map((s) => (
                       <option key={s.id} value={s.id}>
-                        {s.name} ({s.department_code || 'General Staff'})
+                        {s.name} ({s.department_code || 'Staff Officer'})
                       </option>
                     ))
                   )}
@@ -783,31 +746,21 @@ export const CaseDetail = () => {
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#94a3b8', marginBottom: '0.35rem', textTransform: 'uppercase' }}>
-                  Assignment Note (Optional)
-                </label>
+                <label className="form-label">Assignment Note (Optional)</label>
                 <input
                   type="text"
-                  placeholder="e.g. Assigned to morning sector patrol"
                   value={assignNote}
                   onChange={(e) => setAssignNote(e.target.value)}
-                  style={{ width: '100%', padding: '0.65rem', borderRadius: '8px', background: '#1e293b', border: '1px solid #475569', color: '#fff', fontSize: '0.88rem' }}
+                  placeholder="e.g., Assigned to Ward 42 sector officer"
+                  className="form-input"
                 />
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.75rem', paddingTop: '1rem', borderTop: '1px solid #334155' }}>
-                <button
-                  type="button"
-                  onClick={() => setShowAssignModal(false)}
-                  style={{ padding: '0.5rem 1rem', fontSize: '0.8rem', fontWeight: 600, color: '#94a3b8', background: 'transparent', border: 'none', cursor: 'pointer' }}
-                >
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem' }}>
+                <button type="button" onClick={() => setShowAssignModal(false)} className="btn btn-outline">
                   Cancel
                 </button>
-                <button
-                  type="submit"
-                  disabled={assigning || !selectedStaffId}
-                  style={{ padding: '0.55rem 1.2rem', fontSize: '0.8rem', fontWeight: 700, color: '#fff', background: '#2563eb', border: 'none', borderRadius: '8px', cursor: 'pointer', opacity: assigning || !selectedStaffId ? 0.6 : 1 }}
-                >
+                <button type="submit" disabled={assigning || !selectedStaffId} className="btn btn-primary">
                   {assigning ? 'Assigning...' : 'Confirm Assignment'}
                 </button>
               </div>
@@ -816,192 +769,121 @@ export const CaseDetail = () => {
         </div>
       )}
 
-      {/* MODAL 2: Put Case On Hold */}
+      {/* MODAL 2: Put On Hold */}
       {showOnHoldModal && (
-        <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'rgba(0, 0, 0, 0.8)',
-            backdropFilter: 'blur(8px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-            padding: '1.5rem',
-          }}
-        >
-          <div
-            style={{
-              background: '#0f172a',
-              borderRadius: '16px',
-              maxWidth: '480px',
-              width: '100%',
-              padding: '1.75rem',
-              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.8)',
-              border: '1px solid #a855f7',
-              color: '#fff',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: '1rem', borderBottom: '1px solid #334155' }}>
-              <h3 style={{ fontSize: '1.15rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#fff' }}>
-                <PauseCircle className="w-5 h-5 text-purple-400" />
-                Place Case On Hold
+        <div className="modal-overlay">
+          <div className="modal-card">
+            <div className="modal-header">
+              <h3 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <PauseCircle size={20} color="#a855f7" /> Put Case On Hold
               </h3>
-              <button
-                onClick={() => setShowOnHoldModal(false)}
-                style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '0.25rem' }}
-              >
-                <X size={20} />
+              <button onClick={() => setShowOnHoldModal(false)} className="modal-close-btn">
+                <X size={18} />
               </button>
             </div>
 
-            <div style={{ marginTop: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleStatusTransition('ON_HOLD', {
+                  on_hold_reason: onHoldReason,
+                  on_hold_notes: onHoldNote.trim() || undefined,
+                  note: `Case put on hold: ${onHoldReason}`,
+                });
+              }}
+              style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}
+            >
               <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#94a3b8', marginBottom: '0.35rem', textTransform: 'uppercase' }}>
-                  Structured Reason (Mandatory)
-                </label>
+                <label className="form-label">Mandatory Hold Reason</label>
                 <select
                   value={onHoldReason}
                   onChange={(e) => setOnHoldReason(e.target.value)}
-                  style={{ width: '100%', padding: '0.65rem', borderRadius: '8px', background: '#1e293b', border: '1px solid #475569', color: '#fff', fontSize: '0.88rem' }}
+                  className="cases-filter-select"
+                  style={{ width: '100%' }}
+                  required
                 >
-                  <option value="WAITING_FOR_MATERIAL">Waiting for Material / Supplies</option>
-                  <option value="WEATHER">Inclement Weather (Rain/Storm)</option>
-                  <option value="ACCESS_BLOCKED">Access to Site Blocked</option>
-                  <option value="REQUIRES_EXTERNAL_TEAM">Requires Specialized External Team</option>
-                  <option value="OTHER">Other Operational Obstacle</option>
+                  <option value="WAITING_FOR_MATERIAL">WAITING_FOR_MATERIAL — Awaiting supplies or equipment</option>
+                  <option value="WEATHER">WEATHER — Adverse weather condition preventing work</option>
+                  <option value="ACCESS_BLOCKED">ACCESS_BLOCKED — Site access restricted or blocked</option>
+                  <option value="REQUIRES_EXTERNAL_TEAM">REQUIRES_EXTERNAL_TEAM — Specialized contractor needed</option>
+                  <option value="OTHER">OTHER — Documented operational exception</option>
                 </select>
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#94a3b8', marginBottom: '0.35rem', textTransform: 'uppercase' }}>
-                  Reason Explanation
-                </label>
+                <label className="form-label">Detailed Explanation</label>
                 <textarea
                   value={onHoldNote}
                   onChange={(e) => setOnHoldNote(e.target.value)}
                   placeholder="Explain why work cannot proceed right now..."
                   rows={3}
-                  style={{ width: '100%', padding: '0.65rem', borderRadius: '8px', background: '#1e293b', border: '1px solid #475569', color: '#fff', fontSize: '0.88rem' }}
+                  required
+                  className="form-input"
+                  style={{ width: '100%' }}
                 />
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.75rem', paddingTop: '1rem', borderTop: '1px solid #334155' }}>
-                <button
-                  type="button"
-                  onClick={() => setShowOnHoldModal(false)}
-                  style={{ padding: '0.5rem 1rem', fontSize: '0.8rem', fontWeight: 600, color: '#94a3b8', background: 'transparent', border: 'none', cursor: 'pointer' }}
-                >
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem' }}>
+                <button type="button" onClick={() => setShowOnHoldModal(false)} className="btn btn-outline">
                   Cancel
                 </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleStatusTransition('ON_HOLD', {
-                      on_hold_reason: onHoldReason,
-                      on_hold_notes: onHoldNote.trim() || undefined,
-                      note: `Placed on hold: ${onHoldReason}. ${onHoldNote}`.trim(),
-                    })
-                  }
-                  disabled={submittingStatus}
-                  style={{ padding: '0.55rem 1.2rem', fontSize: '0.8rem', fontWeight: 700, color: '#fff', background: '#9333ea', border: 'none', borderRadius: '8px', cursor: 'pointer' }}
-                >
+                <button type="submit" disabled={submittingStatus || !onHoldNote.trim()} className="btn" style={{ background: '#7c3aed', color: '#fff' }}>
                   {submittingStatus ? 'Updating...' : 'Put On Hold'}
                 </button>
               </div>
-            </div>
+            </form>
           </div>
         </div>
       )}
 
-      {/* MODAL 3: Mark Case Resolved */}
+      {/* MODAL 3: Mark Resolved */}
       {showResolveModal && (
-        <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'rgba(0, 0, 0, 0.8)',
-            backdropFilter: 'blur(8px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-            padding: '1.5rem',
-          }}
-        >
-          <div
-            style={{
-              background: '#0f172a',
-              borderRadius: '16px',
-              maxWidth: '480px',
-              width: '100%',
-              padding: '1.75rem',
-              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.8)',
-              border: '1px solid #10b981',
-              color: '#fff',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: '1rem', borderBottom: '1px solid #334155' }}>
-              <h3 style={{ fontSize: '1.15rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#fff' }}>
-                <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-                Resolve Operational Case
+        <div className="modal-overlay">
+          <div className="modal-card">
+            <div className="modal-header">
+              <h3 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <CheckCircle2 size={20} color="#10b981" /> Mark Case Resolved
               </h3>
-              <button
-                onClick={() => setShowResolveModal(false)}
-                style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '0.25rem' }}
-              >
-                <X size={20} />
+              <button onClick={() => setShowResolveModal(false)} className="modal-close-btn">
+                <X size={18} />
               </button>
             </div>
 
-            <div style={{ marginTop: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div style={{ padding: '0.75rem', background: 'rgba(245, 158, 11, 0.12)', border: '1px solid rgba(245, 158, 11, 0.3)', borderRadius: '8px', color: '#fcd34d', fontSize: '0.78rem' }}>
-                <strong>Important Principle:</strong> Marking RESOLVED signifies that staff claims the work is complete. It does not mean the fix is independently verified yet (verification happens in a subsequent phase).
-              </div>
-
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleStatusTransition('RESOLVED', {
+                  note: resolveNote.trim(),
+                });
+              }}
+              style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}
+            >
               <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#94a3b8', marginBottom: '0.35rem', textTransform: 'uppercase' }}>
-                  Resolution Note (Required) *
-                </label>
+                <label className="form-label">Mandatory Resolution Note</label>
                 <textarea
                   value={resolveNote}
                   onChange={(e) => setResolveNote(e.target.value)}
-                  placeholder="e.g. Pothole filled and road surface restored with hot asphalt mix."
+                  placeholder="Describe the physical remediation performed (e.g. Pothole filled and road surface restored)..."
                   rows={3}
                   required
-                  style={{ width: '100%', padding: '0.65rem', borderRadius: '8px', background: '#1e293b', border: '1px solid #475569', color: '#fff', fontSize: '0.88rem' }}
+                  className="form-input"
+                  style={{ width: '100%' }}
                 />
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.75rem', paddingTop: '1rem', borderTop: '1px solid #334155' }}>
-                <button
-                  type="button"
-                  onClick={() => setShowResolveModal(false)}
-                  style={{ padding: '0.5rem 1rem', fontSize: '0.8rem', fontWeight: 600, color: '#94a3b8', background: 'transparent', border: 'none', cursor: 'pointer' }}
-                >
+              <div style={{ fontSize: '0.78rem', color: '#a7f3d0', background: 'rgba(16, 185, 129, 0.1)', padding: '0.65rem 0.85rem', borderRadius: 'var(--radius-md)', border: '1px solid rgba(16, 185, 129, 0.25)' }}>
+                <strong>Important Distinction:</strong> RESOLVED means staff claims the work is complete. It does NOT mean the fix has been independently verified. Independent verification occurs in Phase 8.
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem' }}>
+                <button type="button" onClick={() => setShowResolveModal(false)} className="btn btn-outline">
                   Cancel
                 </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleStatusTransition('RESOLVED', {
-                      note: resolveNote.trim(),
-                    })
-                  }
-                  disabled={submittingStatus || !resolveNote.trim()}
-                  style={{ padding: '0.55rem 1.2rem', fontSize: '0.8rem', fontWeight: 700, color: '#fff', background: '#059669', border: 'none', borderRadius: '8px', cursor: 'pointer', opacity: submittingStatus || !resolveNote.trim() ? 0.6 : 1 }}
-                >
+                <button type="submit" disabled={submittingStatus || !resolveNote.trim()} className="btn" style={{ background: '#059669', color: '#fff' }}>
                   {submittingStatus ? 'Resolving...' : 'Confirm Resolution'}
                 </button>
               </div>
-            </div>
+            </form>
           </div>
         </div>
       )}

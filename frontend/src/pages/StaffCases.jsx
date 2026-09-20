@@ -15,10 +15,11 @@ import {
   UserCheck,
   PauseCircle,
   CheckCircle2,
+  ShieldAlert,
 } from 'lucide-react';
 
 export const StaffCases = () => {
-  const { token, user } = useAuth();
+  const { token, user, role } = useAuth();
   const [cases, setCases] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -75,166 +76,185 @@ export const StaffCases = () => {
     switch (status) {
       case 'UNASSIGNED':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-full bg-slate-100 text-slate-700 border border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700">
-            <AlertCircle className="w-3.5 h-3.5 text-slate-500" />
+          <span className="status-pill status-pill-unassigned">
+            <AlertCircle size={12} />
             Unassigned
           </span>
         );
       case 'ASSIGNED':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-full bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:border-blue-800">
-            <UserCheck className="w-3.5 h-3.5 text-blue-500" />
+          <span className="status-pill status-pill-assigned">
+            <UserCheck size={12} />
             Assigned
           </span>
         );
       case 'ACKNOWLEDGED':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-900/40 dark:text-indigo-300 dark:border-indigo-800">
-            <Clock className="w-3.5 h-3.5 text-indigo-500" />
+          <span className="status-pill status-pill-acknowledged">
+            <Clock size={12} />
             Acknowledged
           </span>
         );
       case 'IN_PROGRESS':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-full bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:border-amber-800">
-            <RefreshCw className="w-3.5 h-3.5 text-amber-500 animate-spin-slow" />
+          <span className="status-pill status-pill-in-progress">
+            <RefreshCw size={12} className="spinner" style={{ width: 12, height: 12, borderWidth: 2 }} />
             In Progress
           </span>
         );
       case 'ON_HOLD':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-full bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-900/40 dark:text-purple-300 dark:border-purple-800">
-            <PauseCircle className="w-3.5 h-3.5 text-purple-500" />
+          <span className="status-pill status-pill-on-hold">
+            <PauseCircle size={12} />
             On Hold
           </span>
         );
       case 'RESOLVED':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-300 dark:border-emerald-800">
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+          <span className="status-pill status-pill-resolved">
+            <CheckCircle2 size={12} />
             Resolved
           </span>
         );
       case 'CLOSED':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-700 border border-gray-300 dark:bg-gray-800 dark:text-gray-300">
+          <span className="status-pill status-pill-closed">
             Closed
           </span>
         );
       default:
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-700">
+          <span className="status-pill" style={{ background: 'rgba(255, 255, 255, 0.1)', color: 'var(--text-main)' }}>
             {status}
           </span>
         );
     }
   };
 
+  const getPriorityBadge = (priority) => {
+    switch (priority) {
+      case 'URGENT':
+        return <span className="priority-pill priority-pill-urgent">URGENT</span>;
+      case 'HIGH':
+        return <span className="priority-pill priority-pill-high">HIGH</span>;
+      case 'LOW':
+        return <span className="priority-pill priority-pill-low">LOW</span>;
+      case 'MEDIUM':
+      default:
+        return <span className="priority-pill priority-pill-medium">MEDIUM</span>;
+    }
+  };
+
+  if (role !== 'STAFF' && role !== 'ADMIN') {
+    return (
+      <div className="cases-page-container">
+        <div className="card" style={{ maxWidth: '540px', margin: '4rem auto', textAlign: 'center', padding: '2.5rem' }}>
+          <ShieldAlert size={48} color="#ef4444" style={{ margin: '0 auto 1rem auto' }} />
+          <h2>Access Restricted</h2>
+          <p style={{ color: 'var(--text-muted)', marginTop: '0.5rem' }}>
+            Only municipal staff officers and administrators are authorized to access the operational case workflow.
+          </p>
+          <div style={{ marginTop: '1.5rem' }}>
+            <Link to="/" className="btn btn-primary">
+              Return to Dashboard
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="cases-page-container">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-gray-200 dark:border-gray-800 pb-6">
-        <div>
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-blue-600 text-white rounded-xl shadow-sm">
-              <Briefcase className="w-6 h-6" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-                Staff Case Operations
-              </h1>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Operational civic work lifecycle, assignment, follow-through, and resolution tracking.
-              </p>
-            </div>
+      <div className="cases-header">
+        <div className="cases-header-left">
+          <div className="cases-header-icon">
+            <Briefcase size={24} />
+          </div>
+          <div>
+            <h1 className="cases-title">Staff Case Operations</h1>
+            <p className="cases-subtitle">
+              Operational civic work lifecycle, department assignment, follow-through, and resolution audit.
+            </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => fetchCases(page)}
-            disabled={loading}
-            className="inline-flex items-center gap-2 px-3.5 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors shadow-sm disabled:opacity-50"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
-        </div>
+        <button
+          onClick={() => fetchCases(page)}
+          disabled={loading}
+          className="btn btn-outline"
+          style={{ fontSize: '0.85rem', padding: '0.5rem 1rem' }}
+        >
+          <RefreshCw size={15} className={loading ? 'spinner' : ''} style={loading ? { width: 14, height: 14, borderWidth: 2 } : {}} />
+          Refresh
+        </button>
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center justify-between mt-6 border-b border-gray-200 dark:border-gray-800">
-        <nav className="flex space-x-8 -mb-px">
-          <button
-            onClick={() => {
-              setActiveTab('active');
-              setStatusFilter('');
-            }}
-            className={`pb-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 transition-colors ${
-              activeTab === 'active'
-                ? 'border-blue-600 text-blue-600 dark:text-blue-400'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-200'
-            }`}
-          >
-            <Briefcase className="w-4 h-4" />
-            Active Cases
-          </button>
+      <div className="cases-nav-tabs">
+        <button
+          onClick={() => {
+            setActiveTab('active');
+            setStatusFilter('');
+          }}
+          className={`cases-tab-btn ${activeTab === 'active' ? 'active' : ''}`}
+        >
+          <Briefcase size={16} />
+          Active Cases
+        </button>
 
-          <button
-            onClick={() => {
-              setActiveTab('needs_attention');
-              setStatusFilter('');
-            }}
-            className={`pb-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 transition-colors ${
-              activeTab === 'needs_attention'
-                ? 'border-blue-600 text-blue-600 dark:text-blue-400'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-200'
-            }`}
-          >
-            <AlertCircle className="w-4 h-4 text-amber-500" />
-            Needs Attention
-          </button>
+        <button
+          onClick={() => {
+            setActiveTab('needs_attention');
+            setStatusFilter('');
+          }}
+          className={`cases-tab-btn ${activeTab === 'needs_attention' ? 'active' : ''}`}
+        >
+          <AlertCircle size={16} color="#f59e0b" />
+          Needs Attention
+        </button>
 
-          <button
-            onClick={() => {
-              setActiveTab('my_cases');
-              setStatusFilter('');
-            }}
-            className={`pb-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 transition-colors ${
-              activeTab === 'my_cases'
-                ? 'border-blue-600 text-blue-600 dark:text-blue-400'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-200'
-            }`}
-          >
-            <UserCheck className="w-4 h-4 text-indigo-500" />
-            My Cases
-          </button>
-        </nav>
+        <button
+          onClick={() => {
+            setActiveTab('my_cases');
+            setStatusFilter('');
+          }}
+          className={`cases-tab-btn ${activeTab === 'my_cases' ? 'active' : ''}`}
+        >
+          <UserCheck size={16} color="#818cf8" />
+          My Cases
+        </button>
 
-        <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">
-          Total: {total}
-        </span>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center' }}>
+          <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', background: 'var(--bg-surface-elevated)', padding: '0.25rem 0.65rem', borderRadius: 'var(--radius-full)', border: '1px solid var(--border-subtle)' }}>
+            Total Cases: <strong>{total}</strong>
+          </span>
+        </div>
       </div>
 
       {/* Filters & Search */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
-        <form onSubmit={handleSearchSubmit} className="relative md:col-span-2">
+      <div className="cases-filter-bar">
+        <form onSubmit={handleSearchSubmit} className="cases-search-box">
+          <Search size={16} />
           <input
             type="text"
-            placeholder="Search by Case Number (CIV-2026-...) or issue keyword..."
+            placeholder="Search by Case # (CIV-2026-...) or issue keyword..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:outline-none dark:text-white"
+            className="cases-search-input"
           />
-          <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-3" />
         </form>
 
-        <div className="flex items-center gap-2">
-          <Filter className="w-4 h-4 text-gray-500 flex-shrink-0" />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+            <Filter size={15} />
+            <span>Status:</span>
+          </div>
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="w-full py-2.5 px-3 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:outline-none dark:text-white"
+            className="cases-filter-select"
           >
             <option value="">All Statuses</option>
             <option value="UNASSIGNED">Unassigned</option>
@@ -250,111 +270,109 @@ export const StaffCases = () => {
 
       {/* Error display */}
       {error && (
-        <div className="mt-6 p-4 rounded-xl bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-sm flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 flex-shrink-0" />
+        <div className="alert alert-error">
+          <AlertCircle size={18} />
           <span>{error}</span>
         </div>
       )}
 
       {/* Case Grid */}
       {loading ? (
-        <div className="py-20 flex flex-col items-center justify-center text-gray-400">
-          <RefreshCw className="w-8 h-8 animate-spin mb-3 text-blue-500" />
-          <p className="text-sm">Loading staff case queue...</p>
+        <div style={{ padding: '5rem 0', textAlign: 'center', color: 'var(--text-muted)' }}>
+          <div className="spinner" style={{ margin: '0 auto 1rem auto' }} />
+          <p style={{ fontSize: '0.9rem' }}>Loading operational case queue...</p>
         </div>
       ) : cases.length === 0 ? (
-        <div className="py-16 text-center border-2 border-dashed border-gray-200 dark:border-gray-800 rounded-2xl mt-6">
-          <Briefcase className="w-12 h-12 mx-auto text-gray-300 dark:text-gray-600 mb-3" />
-          <h3 className="text-base font-semibold text-gray-900 dark:text-white">
-            No operational cases found
-          </h3>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 max-w-sm mx-auto">
+        <div className="card" style={{ padding: '4rem 2rem', textAlign: 'center', borderStyle: 'dashed' }}>
+          <Briefcase size={44} color="var(--text-faint)" style={{ margin: '0 auto 1rem auto' }} />
+          <h3 style={{ fontSize: '1.1rem', marginBottom: '0.4rem' }}>No operational cases found</h3>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', maxWidth: '440px', margin: '0 auto' }}>
             {searchQuery || statusFilter
-              ? 'No cases matched the current search criteria or status filter.'
+              ? 'No cases match your active search keyword or status filter.'
               : activeTab === 'needs_attention'
-              ? 'No unassigned or paused cases require immediate attention.'
+              ? 'Great news! No unassigned or on-hold cases require immediate attention.'
               : activeTab === 'my_cases'
-              ? 'You do not have any cases assigned to you currently.'
-              : 'There are no active operational cases in this department queue.'}
+              ? 'You do not have any cases assigned to your account right now.'
+              : 'There are currently no active operational cases in this municipal queue.'}
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">
+        <div className="cases-grid">
           {cases.map((c) => (
-            <div
-              key={c.id}
-              className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between"
-            >
+            <div key={c.id} className="case-card">
               <div>
-                {/* Top header: Case number & Status */}
-                <div className="flex items-center justify-between gap-2 mb-3">
-                  <span className="font-mono text-xs font-bold text-gray-900 dark:text-white px-2.5 py-1 bg-gray-100 dark:bg-gray-700/60 rounded-md border border-gray-200 dark:border-gray-600">
-                    {c.case_number}
-                  </span>
-                  {getStatusBadge(c.status)}
+                {/* Header: Case # & Status & Priority */}
+                <div className="case-card-header">
+                  <span className="case-number">{c.case_number}</span>
+                  <div className="case-badges">
+                    {getPriorityBadge(c.priority)}
+                    {getStatusBadge(c.status)}
+                  </div>
                 </div>
 
                 {/* Category & Description */}
-                <div className="mb-3">
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <span className="text-xs font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded">
-                      {c.category || 'CIVIC ISSUE'}
-                    </span>
-                    {c.priority && (
-                      <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                        Priority: {c.priority}
-                      </span>
-                    )}
+                <div style={{ marginTop: '0.85rem' }}>
+                  <div style={{ display: 'inline-block', fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: '#60a5fa', background: 'rgba(37, 99, 235, 0.12)', padding: '0.15rem 0.5rem', borderRadius: 'var(--radius-sm)', marginBottom: '0.4rem' }}>
+                    {c.category ? c.category.replace(/_/g, ' ') : 'CIVIC ISSUE'}
                   </div>
-                  <p className="text-sm font-medium text-gray-900 dark:text-white line-clamp-2">
-                    {c.report_description || 'No report description available.'}
-                  </p>
+                  <h4 className="case-card-title" style={{ fontSize: '0.98rem' }}>
+                    {c.report_description ? (
+                      c.report_description.length > 85
+                        ? `${c.report_description.substring(0, 85)}...`
+                        : c.report_description
+                    ) : (
+                      'Citizen civic incident'
+                    )}
+                  </h4>
                 </div>
 
-                {/* Authority, Department, Jurisdiction */}
-                <div className="space-y-1.5 text-xs text-gray-600 dark:text-gray-300 mb-4 bg-gray-50 dark:bg-gray-750 p-3 rounded-lg">
-                  <div className="flex items-center gap-1.5">
-                    <Building2 className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                    <span className="font-semibold text-gray-700 dark:text-gray-200">
-                      {c.authority_code || c.authority_name || 'MCC'}
+                {/* Metadata List */}
+                <div className="case-meta-list">
+                  <div className="case-meta-row">
+                    <Building2 size={13} />
+                    <span style={{ color: 'var(--text-main)', fontWeight: 600 }}>
+                      {c.authority_code || 'MCC'}
                     </span>
-                    <span className="text-gray-400">/</span>
-                    <span className="truncate">{c.department_name || c.department_code || 'General'}</span>
+                    <span style={{ color: 'var(--text-faint)' }}>/</span>
+                    <span style={{ color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {c.department_name || c.department_code || 'General Operations'}
+                    </span>
                   </div>
 
                   {c.jurisdiction_name && (
-                    <div className="flex items-center gap-1.5">
-                      <MapPin className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                    <div className="case-meta-row">
+                      <MapPin size={13} />
                       <span>{c.jurisdiction_name}</span>
                     </div>
                   )}
 
-                  <div className="flex items-center gap-1.5 text-gray-500">
-                    <UserCheck className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                  <div className="case-meta-row">
+                    <UserCheck size={13} />
                     <span>
                       {c.assigned_to_name ? (
-                        <>Assigned: <strong className="text-gray-700 dark:text-gray-200">{c.assigned_to_name}</strong></>
+                        <>Assigned: <strong style={{ color: 'var(--text-main)' }}>{c.assigned_to_name}</strong></>
                       ) : (
-                        <em className="text-amber-600 dark:text-amber-400">Awaiting staff assignment</em>
+                        <em style={{ color: '#f59e0b' }}>Awaiting staff assignment</em>
                       )}
                     </span>
                   </div>
                 </div>
               </div>
 
-              {/* Bottom footer: Timestamps & Action button */}
-              <div className="pt-3 border-t border-gray-100 dark:border-gray-700 flex items-center justify-between">
-                <div className="text-[11px] text-gray-400 flex items-center gap-1">
-                  <Clock className="w-3 h-3" />
+              {/* Footer */}
+              <div className="case-card-footer">
+                <div className="case-card-footer-time">
+                  <Clock size={12} />
                   <span>{new Date(c.created_at).toLocaleDateString()}</span>
                 </div>
 
                 <Link
                   to={`/staff/cases/${c.id}`}
-                  className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 group"
+                  className="btn btn-primary"
+                  style={{ padding: '0.4rem 0.85rem', fontSize: '0.8rem', borderRadius: 'var(--radius-md)' }}
                 >
                   Manage Case
-                  <ChevronRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />
+                  <ChevronRight size={13} />
                 </Link>
               </div>
             </div>
@@ -364,21 +382,23 @@ export const StaffCases = () => {
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between border-t border-gray-200 dark:border-gray-800 mt-8 pt-4">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border-subtle)', paddingTop: '1.25rem' }}>
           <button
             onClick={() => fetchCases(page - 1)}
             disabled={page <= 1}
-            className="px-3.5 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+            className="btn btn-outline"
+            style={{ padding: '0.45rem 1rem', fontSize: '0.82rem' }}
           >
             Previous
           </button>
-          <span className="text-xs text-gray-500 dark:text-gray-400">
+          <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
             Page {page} of {totalPages}
           </span>
           <button
             onClick={() => fetchCases(page + 1)}
             disabled={page >= totalPages}
-            className="px-3.5 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+            className="btn btn-outline"
+            style={{ padding: '0.45rem 1rem', fontSize: '0.82rem' }}
           >
             Next
           </button>
