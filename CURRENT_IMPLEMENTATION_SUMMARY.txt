@@ -1,0 +1,430 @@
+================================================================================
+CIVICFLOW (HACKMYSURU 1.0) — COMPLETE IMPLEMENTATION SUMMARY
+================================================================================
+
+PROJECT: CivicFlow — Unified Civic Incident & Accountability Platform
+CORE PRINCIPLE: ONE CIVIC INCIDENT -> ONE RESPONSIBLE CASE -> ONE AUDITABLE JOURNEY
+STATUS: Phase 0 through Phase 7 Fully Implemented, Tested, and Verified
+
+================================================================================
+1. PROJECT FOLDER STRUCTURE
+================================================================================
+
+d:\HackMysuru\
+|-- README.md                             # Project overview, test commands & lifecycle
+|-- CURRENT_IMPLEMENTATION_SUMMARY.txt    # This implementation summary file
+|-- docs\
+|   |-- architecture.md                   # Complete architectural specification (Phases 1-7)
+|   |-- limitations.md                    # Scope boundaries, non-goals, and constraints
+|   `-- setup.md                          # Local deployment and environment guide
+|-- backend\
+|   |-- package.json                      # Dependencies: express, pg, uuid, @google/genai, jsonwebtoken
+|   `-- src\
+|       |-- app.js                        # Express app configuration, CORS, parsers, route mounting
+|       |-- server.js                     # Server entrypoint listening on port 5000
+|       |-- config\
+|       |   |-- db.js                     # Dual-engine data layer (PostgreSQL/PostGIS + in-memory fallback)
+|       |   `-- firebase.js               # Firebase Admin auth verification + Dev JWT signing/verification
+|       |-- data\fixtures\
+|       |   |-- mysuru_jurisdictions.geojson      # Mapped Ward 42, Town Panchayats, temporal boundaries
+|       |   `-- mysuru_responsibility_rules.json  # Authorities, departments, and versioned routing rules
+|       |-- db\migrations\
+|       |   |-- 001_create_users_table.sql
+|       |   |-- 002_create_reports_table.sql
+|       |   |-- 003_create_ai_analysis_table.sql
+|       |   |-- 004_create_jurisdictions_tables.sql
+|       |   |-- 005_create_responsibility_rules_tables.sql
+|       |   |-- 006_create_routing_reviews_table.sql
+|       |   `-- 007_create_civic_cases_tables.sql
+|       |-- middleware\
+|       |   |-- requireAuth.js            # JWT verification & server-side identity/role/department attachment
+|       |   `-- requireRole.js            # Role guard enforcing CITIZEN, STAFF, ADMIN permissions
+|       |-- routes\
+|       |   |-- auth.js                   # Authentication, dev-login, role test endpoints, current profile
+|       |   |-- reports.js                # Report CRUD, analysis, jurisdiction, routing, review, case
+|       |   |-- jurisdictions.js          # Standalone spatial jurisdiction resolution endpoint
+|       |   |-- routing.js                # Dynamic responsibility rule resolution, authorities, departments
+|       |   `-- staff.js                  # Staff review queue, case queue, status updates, assignments, notes
+|       |-- scripts\
+|       |   |-- verify_phase1.js          # Phase 1 test suite (19 assertions)
+|       |   |-- verify_phase2.js          # Phase 2 test suite (20 assertions)
+|       |   |-- verify_phase3.js          # Phase 3 test suite (25 assertions)
+|       |   |-- verify_phase4.js          # Phase 4 test suite (15 assertions)
+|       |   |-- verify_phase5.js          # Phase 5 test suite (47 assertions)
+|       |   |-- verify_phase6.js          # Phase 6 test suite (40 assertions)
+|       |   |-- verify_phase7.js          # Phase 7 test suite (54 assertions)
+|       |   `-- demo_phase7.js            # Section 27 full 12-step end-to-end demo scenario
+|       `-- services\
+|           |-- aiService.js              # Gemini 3.6 Flash multimodal engine + semantic fallback
+|           |-- jurisdiction.js           # PostGIS ST_Covers spatial queries + temporal boundary filter
+|           |-- responsibility.js         # Dynamic civic responsibility rule resolution engine
+|           |-- routingAssessment.js      # Routing confidence assessment (AUTO_ROUTED vs NEEDS_REVIEW)
+|           |-- caseService.js            # Case state machine, transition validator, assignment, audit logger
+|           `-- mediaStorage.js           # Magic byte photo validation, buffer storage, mime verification
+`-- frontend\
+    |-- index.html                        # HTML5 entry with Outfit & Plus Jakarta Sans typography
+    |-- package.json                      # Dependencies: react, react-dom, react-router-dom, lucide-react
+    |-- vite.config.js                    # Vite configuration running on port 3000
+    `-- src\
+        |-- main.jsx                      # React 18 DOM root
+        |-- App.jsx                       # Route declarations, protected route wrappers, auth provider
+        |-- index.css                     # CivicFlow Design System tokens, dark-mode styling, vanilla CSS
+        |-- components\
+        |   |-- Navbar.jsx                # Responsive header, brand mark, role pill, navigation links
+        |   `-- ProtectedRoute.jsx        # Client-side route protection by role with access denial screens
+        |-- context\
+        |   `-- AuthContext.jsx           # Global authentication state, tokens, user profiles, dev-login
+        |-- pages\
+        |   |-- Dashboard.jsx             # Role-tailored home dashboard, quick links, RBAC testing console
+        |   |-- Login.jsx                 # Quick role-switching dev login (Citizen, Staff, Admin)
+        |   |-- Register.jsx              # Citizen account registration (strictly defaults to CITIZEN)
+        |   |-- ReportIssue.jsx           # 5-step guided reporting flow (Category, Description, GPS, Photo)
+        |   |-- MyReports.jsx             # Citizen personal reports list with status badges
+        |   |-- ReportDetail.jsx          # Report view with AI summary, jurisdiction, routing, 5-stage stepper
+        |   |-- ReviewQueue.jsx           # Staff routing review queue with Approve & Override modal
+        |   |-- StaffCases.jsx            # Staff case queue (Active Cases, Needs Attention, My Cases)
+        |   `-- CaseDetail.jsx            # Staff operational workspace with transitions, notes & event timeline
+        `-- services\
+            |-- api.js                    # Centralized HTTP client wrapping all backend endpoints
+            `-- firebase.js               # Optional Firebase client configuration
+
+================================================================================
+2. AUTHENTICATION & ROLE-BASED ACCESS CONTROL (RBAC)
+================================================================================
+
+ROLES IMPLEMENTED:
+- CITIZEN:
+  Can submit reports, view own reports, inspect case operational progress.
+  Strictly blocked from staff queues, case status updates, and staff assignments.
+- STAFF:
+  Can access routing review queue, staff case queue, perform state transitions,
+  assign staff, and add operational notes (scoped to department/authority).
+- ADMIN:
+  Global municipal oversight with full write and override permissions across all
+  authorities and departments.
+
+SECURITY IMPLEMENTATION:
+- Server-Derived Identity:
+  The client never passes user_id, role, authority_id, or department_id in write
+  payloads. The server extracts the verified identity directly from the JWT session
+  token in backend/src/middleware/requireAuth.js.
+- Client Role Stripping on Registration:
+  In POST /api/auth/register-sync, any client-supplied role parameter is discarded;
+  new user records are always inserted with role = 'CITIZEN'.
+- IDOR Protection:
+  Citizen endpoints verify that report.user_id === req.user.id. Unauthorized access
+  attempts return 403 Forbidden.
+- Departmental Scoping:
+  Staff members cannot update or assign cases belonging to an authority or
+  department outside their assigned scope.
+
+================================================================================
+3. DATABASE SCHEMA & MODELS (DUAL ENGINE: POSTGRESQL + IN-MEMORY FALLBACK)
+================================================================================
+
+1. TABLE: users (001_create_users_table.sql, 007_create_civic_cases_tables.sql)
+   - id                     UUID PRIMARY KEY
+   - auth_uid               VARCHAR(128) UNIQUE NOT NULL
+   - name                   VARCHAR(255) NOT NULL
+   - email                  VARCHAR(255) UNIQUE NOT NULL
+   - role                   VARCHAR(32) NOT NULL ('CITIZEN' | 'STAFF' | 'ADMIN')
+   - authority_id           UUID REFERENCES authorities(id)
+   - department_id          UUID REFERENCES departments(id)
+   - created_at             TIMESTAMP WITH TIME ZONE NOT NULL
+   - updated_at             TIMESTAMP WITH TIME ZONE NOT NULL
+
+2. TABLE: reports (002_create_reports_table.sql)
+   - id                     UUID PRIMARY KEY
+   - user_id                UUID NOT NULL REFERENCES users(id)
+   - category               VARCHAR(64) NOT NULL
+   - description            TEXT NOT NULL (10-1000 chars)
+   - latitude               DOUBLE PRECISION NOT NULL (-90 to +90)
+   - longitude              DOUBLE PRECISION NOT NULL (-180 to +180)
+   - location_accuracy      DOUBLE PRECISION (>= 0)
+   - location_status        VARCHAR(32) NOT NULL ('VERIFIED', 'ACCURACY_POOR', 'MANUAL_ENTRY', 'LOCATION_MISSING')
+   - photo_url              TEXT
+   - status                 VARCHAR(32) NOT NULL DEFAULT 'SUBMITTED'
+   - created_at             TIMESTAMP WITH TIME ZONE NOT NULL
+   - updated_at             TIMESTAMP WITH TIME ZONE NOT NULL
+
+3. TABLE: ai_analyses (003_create_ai_analysis_table.sql)
+   - id                     UUID PRIMARY KEY
+   - report_id              UUID NOT NULL REFERENCES reports(id)
+   - detected_category      VARCHAR(64) NOT NULL
+   - confidence             NUMERIC(4,3) NOT NULL (0.000 to 1.000)
+   - urgency_level          VARCHAR(32) NOT NULL ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL')
+   - severity               VARCHAR(32) NOT NULL ('MINOR', 'MODERATE', 'SEVERE', 'HAZARDOUS')
+   - summary                TEXT NOT NULL
+   - suggested_action       TEXT
+   - risk_factors           TEXT[]
+   - extracted_entities     JSONB
+   - analysis_status        VARCHAR(32) NOT NULL ('COMPLETED', 'NEEDS_REVIEW', 'FAILED')
+   - model_version          VARCHAR(64) NOT NULL
+   - created_at             TIMESTAMP WITH TIME ZONE NOT NULL
+
+4. TABLES: jurisdictions & jurisdiction_boundaries (004_create_jurisdictions_tables.sql)
+   - jurisdictions: id, code (UNIQUE), name, type ('MCC_WARD', 'TOWN_PANCHAYAT', 'GRAM_PANCHAYAT')
+   - jurisdiction_boundaries: id, jurisdiction_id, version, geometry (GEOMETRY(Polygon/MultiPolygon, 4326)),
+     valid_from (TIMESTAMP), valid_until (TIMESTAMP, nullable)
+   - report_jurisdiction: report_id, jurisdiction_id, jurisdiction_boundary_id, match_status,
+     boundary_version, matched_at (Immutable snapshot)
+
+5. TABLES: authorities, departments & responsibility_rules (005_create_responsibility_rules_tables.sql)
+   - authorities: id, code ('MCC', 'CHAMUNDI_GP', 'HUZZUR_TP', 'SPECIAL_INFRA_AUTHORITY'), name, jurisdiction_type
+   - departments: id, authority_id, code ('MCC_ROADS', 'MCC_DRAINAGE', 'MCC_HEALTH', etc.), name, description
+   - responsibility_rules: id, jurisdiction_id, issue_category, authority_id, department_id, version,
+     valid_from, valid_until, priority (INT), active (BOOLEAN)
+   - report_routing: report_id, authority_id, department_id, rule_id, rule_version, route_status,
+     explanation, routed_at (Immutable snapshot)
+
+6. TABLE: routing_reviews (006_create_routing_reviews_table.sql)
+   - id                     UUID PRIMARY KEY
+   - report_id              UUID NOT NULL REFERENCES reports(id)
+   - reviewer_id            UUID NOT NULL REFERENCES users(id)
+   - action                 VARCHAR(32) NOT NULL ('APPROVE' | 'OVERRIDE')
+   - selected_authority_id  UUID REFERENCES authorities(id)
+   - selected_department_id UUID REFERENCES departments(id)
+   - notes                  TEXT
+   - created_at             TIMESTAMP WITH TIME ZONE NOT NULL
+
+7. TABLES: civic_cases & case_events (007_create_civic_cases_tables.sql)
+   - civic_cases:
+     id                     UUID PRIMARY KEY
+     report_id              UUID NOT NULL UNIQUE REFERENCES reports(id)
+     case_number            VARCHAR(32) NOT NULL UNIQUE (Format: 'CIV-YYYY-XXXXXX')
+     authority_id           UUID REFERENCES authorities(id)
+     department_id          UUID REFERENCES departments(id)
+     jurisdiction_id        UUID REFERENCES jurisdictions(id)
+     jurisdiction_version_id UUID REFERENCES jurisdiction_boundaries(id)
+     responsibility_rule_id UUID REFERENCES responsibility_rules(id)
+     status                 VARCHAR(32) NOT NULL ('UNASSIGNED', 'ASSIGNED', 'ACKNOWLEDGED', 'IN_PROGRESS', 'ON_HOLD', 'RESOLVED', 'CLOSED')
+     priority               VARCHAR(32) NOT NULL DEFAULT 'MEDIUM' ('LOW', 'MEDIUM', 'HIGH', 'URGENT')
+     assigned_to            UUID REFERENCES users(id)
+     assigned_at            TIMESTAMP WITH TIME ZONE
+     acknowledged_at        TIMESTAMP WITH TIME ZONE
+     started_at             TIMESTAMP WITH TIME ZONE
+     resolved_at            TIMESTAMP WITH TIME ZONE
+     closed_at              TIMESTAMP WITH TIME ZONE
+     on_hold_reason         TEXT
+     on_hold_notes          TEXT
+     resolution_note        TEXT
+     created_at             TIMESTAMP WITH TIME ZONE NOT NULL
+     updated_at             TIMESTAMP WITH TIME ZONE NOT NULL
+
+   - case_events:
+     id                     UUID PRIMARY KEY
+     case_id                UUID NOT NULL REFERENCES civic_cases(id)
+     event_type             VARCHAR(64) NOT NULL ('CASE_CREATED', 'CASE_ASSIGNED', 'CASE_REASSIGNED',
+                            'CASE_ACKNOWLEDGED', 'CASE_STARTED', 'CASE_ON_HOLD', 'CASE_RESUMED',
+                            'CASE_NOTE_ADDED', 'CASE_RESOLVED', 'CASE_CLOSED')
+     from_status            VARCHAR(32)
+     to_status              VARCHAR(32)
+     actor_user_id          UUID NOT NULL REFERENCES users(id)
+     note                   TEXT
+     metadata               JSONB
+     created_at             TIMESTAMP WITH TIME ZONE NOT NULL
+
+================================================================================
+4. BACKEND REST APIS
+================================================================================
+
+AUTHENTICATION & USERS (/api/auth)
+  POST /api/auth/register-sync      Syncs newly registered auth user (role defaulted to CITIZEN)
+  POST /api/auth/dev-login          Issues signed development JWT token for seeded test personas
+  GET  /api/users/me                Returns authenticated user profile, role, authority, and department
+  GET  /api/auth/test/public        Public access healthcheck
+  GET  /api/auth/test/citizen-only  Protected endpoint requiring CITIZEN, STAFF, or ADMIN
+  GET  /api/auth/test/staff-only    Protected endpoint requiring STAFF or ADMIN
+  GET  /api/auth/test/admin-only    Protected endpoint requiring ADMIN
+
+CITIZEN REPORTS (/api/reports)
+  POST /api/reports                 Creates report; automatically triggers AI, PostGIS, routing & case creation
+  GET  /api/reports/my              Retrieves paginated reports submitted by authenticated citizen
+  GET  /api/reports/:id             Retrieves full report details with IDOR security validation
+  GET  /api/reports/:id/analysis    Retrieves structured AI analysis record
+  POST /api/reports/:id/analyze     Triggers or force-reprocesses AI issue understanding
+  GET  /api/reports/:id/jurisdiction Retrieves immutable spatial boundary snapshot
+  POST /api/reports/:id/jurisdiction/resolve Manually triggers spatial jurisdiction resolution
+  GET  /api/reports/:id/routing     Retrieves immutable responsibility routing snapshot
+  POST /api/reports/:id/routing/resolve Manually triggers responsibility evaluation
+  GET  /api/reports/:id/case        Retrieves citizen operational progress, case number & timeline
+  POST /api/reports/:id/routing-review Staff adjudication (Approve or Override route; creates case)
+
+SPATIAL & RESPONSIBILITY ENGINE (/api/jurisdictions, /api/routing)
+  POST /api/jurisdictions/resolve   Evaluates coordinates against active boundary polygons
+  POST /api/routing/resolve         Evaluates jurisdiction + category + timestamp against rules
+  GET  /api/routing/authorities     Retrieves list of municipal authorities
+  GET  /api/routing/departments     Retrieves list of municipal departments
+
+STAFF WORKFLOW & FOLLOW-THROUGH (/api/staff)
+  GET   /api/staff/routing-review   Retrieves paginated reports flagged as NEEDS_REVIEW
+  GET   /api/staff/cases            Retrieves paginated operational cases (active, needs_attention, my_cases)
+  GET   /api/staff/cases/:id        Retrieves full case details with linked report, routing, and audit timeline
+  PATCH /api/staff/cases/:id/status Controlled state transition (ACKNOWLEDGED, IN_PROGRESS, ON_HOLD, RESOLVED)
+  PATCH /api/staff/cases/:id/assignment Assigns or reassigns staff member within authorized department
+  POST  /api/staff/cases/:id/notes  Adds operational field notes with citizen visibility control
+  GET   /api/staff/users            Retrieves department staff members for assignment
+
+================================================================================
+5. CORE LOGIC SERVICES & ENGINES
+================================================================================
+
+1. AI ISSUE UNDERSTANDING ENGINE (aiService.js)
+   - Uses Google Gemini 3.6 Flash (@google/genai) for multimodal text and image understanding.
+   - Strict Separation: Analyzes WHAT the problem is; strictly prohibited from determining
+     administrative ownership or municipal authorities.
+   - Validates output category against enum list, checks confidence in [0.0, 1.0].
+   - If confidence < 0.70 or description is ambiguous, flags as NEEDS_REVIEW.
+   - Built-in heuristic fallback engine runs automatically if Gemini quota is exhausted or API key is absent.
+
+2. GEOSPATIAL & JURISDICTION ENGINE (jurisdiction.js)
+   - Runs PostGIS spatial query with ST_Covers and temporal validity:
+     WHERE ST_Covers(geometry, ST_SetSRID(ST_MakePoint(lng, lat), 4326))
+       AND valid_from <= report_time
+       AND (valid_until IS NULL OR valid_until > report_time)
+   - Resolves into 3 deterministic cases:
+     * MATCHED: Exactly 1 boundary polygon covers point (requires_review = false)
+     * NO_JURISDICTION_MATCH: 0 boundaries match (outside city or gap; requires_review = true)
+     * JURISDICTION_CONFLICT: >=2 overlapping boundaries match (dispute; requires_review = true)
+   - Emulates ST_Covers via ray-casting with boundary tolerance in fallback store.
+
+3. DYNAMIC CIVIC RESPONSIBILITY RULE ENGINE (responsibility.js)
+   - Resolves WHO is responsible based on (jurisdiction, category, timestamp).
+   - Resolves into 3 deterministic cases:
+     * ROUTED: Exactly 1 active rule matches (requires_review = false)
+     * NO_RESPONSIBLE_RULE: Category unmapped in jurisdiction (requires_review = true)
+     * RESPONSIBILITY_CONFLICT: Equal-priority competing rules match (requires_review = true)
+   - AI Uncertainty Interlock: If AI confidence < 0.70, marks routing snapshot as NEEDS_REVIEW.
+
+4. ROUTING CONFIDENCE & ASSESSMENT ENGINE (routingAssessment.js)
+   - Principle: Automate when confident; escalate when uncertain; never guess responsibility.
+   - Evaluates AI + PostGIS + Responsibility Rule signals:
+     * AUTO_ROUTED: Valid report + AI confidence >= 0.70 + single spatial match + single rule match.
+     * NEEDS_REVIEW: Flagged with structured reasons (AI_LOW_CONFIDENCE, AI_NEEDS_REVIEW,
+       NO_JURISDICTION_MATCH, JURISDICTION_CONFLICT, NO_RESPONSIBILITY_RULE,
+       RESPONSIBILITY_CONFLICT, INVALID_LOCATION).
+   - High AI confidence (e.g. 0.99) can never bypass spatial disputes or unmapped rules.
+
+5. CASE LIFECYCLE SERVICE (caseService.js)
+   - Enforces linear state transitions:
+     UNASSIGNED -> ASSIGNED -> ACKNOWLEDGED -> IN_PROGRESS -> RESOLVED -> CLOSED
+   - Allows structured pauses: IN_PROGRESS -> ON_HOLD and ON_HOLD -> IN_PROGRESS.
+   - State transition validation rules:
+     * ASSIGNED -> RESOLVED is rejected (400)
+     * RESOLVED -> IN_PROGRESS is rejected (400)
+     * ON_HOLD requires structured reason (WAITING_FOR_MATERIAL, WEATHER, ACCESS_BLOCKED,
+       REQUIRES_EXTERNAL_TEAM, OTHER)
+     * RESOLVED requires resolution note describing the fix
+     * RESOLVED != VERIFIED: RESOLVED means staff claims completion; independent verification
+       is intentionally deferred to Phase 8.
+   - Idempotent case creation: AUTO_ROUTED or approved human review creates exactly one case.
+
+================================================================================
+6. FRONTEND PAGES & DESIGN SYSTEM
+================================================================================
+
+CivicFlow uses a Vanilla CSS design system (frontend/src/index.css) with dark-mode
+color tokens (--bg-primary, --bg-surface, --primary, --border-subtle):
+
+1. Dashboard.jsx
+   - Role-aware landing view displaying authenticated user info.
+   - Quick navigation cards (Report Issue, My Reports, Review Queue, Staff Cases).
+   - Interactive RBAC endpoint testing console.
+
+2. Login.jsx
+   - Quick single-click dev login buttons for Citizen, Staff (Roads), Staff (Drainage), Admin.
+
+3. Register.jsx
+   - Citizen registration form enforcing password validation and role immutability.
+
+4. ReportIssue.jsx
+   - 5-step guided reporting flow:
+     Step 1: Category picker (POTHOLE, GARBAGE, STREETLIGHT, DRAINAGE, WATER, OTHER)
+     Step 2: Description textarea with length validation
+     Step 3: Geolocation capture (HTML5 GPS, accuracy circle, manual entry option)
+     Step 4: Photo upload with preview and validation
+     Step 5: Review & submit step with immediate routing assessment feedback
+
+5. MyReports.jsx
+   - Citizen incident list with category badges, timestamps, status pills, and direct links.
+
+6. ReportDetail.jsx
+   - 5-stage progress stepper: Report Received -> Routed -> Staff Acknowledged -> In Progress -> Resolved
+   - AI issue understanding card (category, severity, risk factors)
+   - Jurisdiction boundary card (Ward, authority, boundary version)
+   - Responsible department card with explainability trace
+   - Citizen-safe operational timeline with public staff notes
+
+7. ReviewQueue.jsx
+   - Interface for reports in NEEDS_REVIEW.
+   - Displays structured review reasons.
+   - Modal review dialog with Approve Suggested Route vs Override Route.
+
+8. StaffCases.jsx
+   - Operational case management queue.
+   - Tabs: Active Cases, Needs Attention (UNASSIGNED / ON_HOLD), My Cases.
+   - Keyword search and status filter dropdown.
+   - Responsive case cards with case number (CIV-2026-XXXXXX), priority, department, officer.
+
+9. CaseDetail.jsx
+   - Operational staff workspace.
+   - Dynamic action bar matching case status (Acknowledge, Start Work, Put On Hold, Resume Work, Mark Resolved, Reassign).
+   - Modal dialogs for assignment, on-hold (with structured reasons), and resolution notes.
+   - Auditable staff field note form with internal privacy toggle (is_internal).
+   - Sticky chronological case event timeline tracking every transition, actor, and timestamp.
+
+================================================================================
+7. WORKING OPERATIONAL FLOWS
+================================================================================
+
+FLOW 1: HIGH-CONFIDENCE AUTO-ROUTING & RESOLUTION
+  1. Citizen submits report: "Huge dangerous pothole near railway gate in Ward 42" with GPS (12.315, 76.635).
+  2. AI analyzes report -> POTHOLE, HIGH severity, confidence 0.88.
+  3. Geospatial engine matches coordinates -> MCC_WARD_42 (2026-V1).
+  4. Responsibility engine resolves rule -> MCC authority, MCC_ROADS department (ROUTED).
+  5. Routing assessment confirms all signals -> AUTO_ROUTED.
+  6. Operational case created automatically -> CIV-2026-010001 (UNASSIGNED).
+  7. Staff opens case -> assigns to Radha Shastry (MCC Ward Officer) -> status moves to ASSIGNED.
+  8. Staff acknowledges receipt -> status moves to ACKNOWLEDGED (acknowledged_at recorded).
+  9. Work begins on site -> status moves to IN_PROGRESS (started_at recorded).
+  10. Staff adds field note: "Inspection completed. Deep pothole excavation finished."
+  11. Work complete -> staff marks RESOLVED with note: "Pothole filled and road surface restored."
+  12. Citizen views report -> sees complete 5-stage progress and timeline.
+
+FLOW 2: AMBIGUOUS INCIDENT ESCALATED TO HUMAN REVIEW
+  1. Citizen submits report outside municipal boundary or with ambiguous text.
+  2. Routing assessment detects uncertainty -> flags report as NEEDS_REVIEW.
+  3. Operational case is NOT created while under review.
+  4. Staff opens /staff/routing-review, reviews details, and clicks Override Route -> assigns MCC / MCC_DRAINAGE.
+  5. Review is saved in routing_reviews with audit trail -> report status becomes REVIEWED.
+  6. Operational case is automatically created in UNASSIGNED state for newly assigned department.
+
+FLOW 3: WORK PAUSED (ON-HOLD HANDLING)
+  1. Active case is IN_PROGRESS.
+  2. Staff clicks Put On Hold -> modal requires selecting a structured reason (e.g. WAITING_FOR_MATERIAL)
+     and an explanatory note.
+  3. Case moves to ON_HOLD (CASE_ON_HOLD event recorded).
+  4. When supplies arrive, staff clicks Resume Work -> case returns to IN_PROGRESS (CASE_RESUMED event recorded).
+  5. Both events are permanently preserved in the immutable timeline.
+
+================================================================================
+8. VERIFICATION & TEST SUITE RESULTS
+================================================================================
+
+All automated verification scripts run directly via node in backend/src/scripts/:
+
+  verify_phase1.js   -- 19 / 19 PASSED  (Auth, Tokens, RBAC, IDOR guards)
+  verify_phase2.js   -- 20 / 20 PASSED  (Citizen Report Creation, Input Validation)
+  verify_phase3.js   -- 25 / 25 PASSED  (Gemini AI Understanding, Schema Validation, Fallback)
+  verify_phase4.js   -- 15 / 15 PASSED  (PostGIS ST_Covers, Temporal Boundaries, Conflict Cases)
+  verify_phase5.js   -- 47 / 47 PASSED  (Dynamic Responsibility Rules, Temporal Rules, Explainability)
+  verify_phase6.js   -- 40 / 40 PASSED  (Routing Confidence Assessment, Review Queue, Override)
+  verify_phase7.js   -- 54 / 54 PASSED  (Staff Case Workflow, State Machine, Audit Log, Queue)
+  demo_phase7.js     -- 12 / 12 PASSED  (Full 12-step end-to-end Section 27 scenario)
+
+  TOTAL: 220 / 220 AUTOMATED TESTS PASSING (100% GREEN)
+
+GIT REPOSITORY:
+  Remote: https://github.com/Suhassagar/Hackmysore.git
+  Branch: main (Clean, committed, and pushed)
+================================================================================
