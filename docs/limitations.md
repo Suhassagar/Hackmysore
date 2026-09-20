@@ -67,20 +67,34 @@ This document outlines intentional architectural boundaries, current prototype l
 
 ---
 
-## 6. Deferred Capabilities (Non-Goals for Phase 7)
+---
 
-The following capabilities belong to upcoming phases and are intentionally deferred:
+## 6. Resolution Verification Boundaries (Phase 8)
 
-1. **Resolution Verification & Citizen Disputes (Phase 8)**:
-   Post-repair photographic proof-of-work verification using Gemini, geotagged proof comparison, citizen confirmation, and dispute arbitration.
-2. **Automated SLA Management & Escalation Timers**:
+- **Citizen as Verification Authority**:
+  The system strictly enforces that only the citizen who created the original civic problem report has the authority to independently confirm (`VERIFIED`) or challenge (`DISPUTED`) the resolution claim. Municipal staff cannot mark resolutions verified on behalf of citizens.
+- **Controlled Reopen Bound**:
+  A dispute by a citizen does not cause infinite cyclic churn. A disputed resolution returns the case to `IN_PROGRESS` under the same case number and emits an immutable `CASE_REOPENED` audit event, incrementing the verification cycle counter for full accountability.
+- **Photographic Evidence Is Supportive, Not Absolute**:
+  Resolution photos submitted by field staff provide auditable proof of work for citizen review. However, visual photo evidence does not supersede physical reality (e.g. an improperly compacted pothole that sinks after rain). The affected citizen's on-the-ground confirmation remains the definitive verification gate.
+- **Advisory Nature of AI**:
+  While AI provides issue classification in earlier phases, the Phase 8 resolution verification standard relies on human accountability: municipal staff operational responsibility vs. citizen physical verification.
+
+---
+
+## 7. Deferred Capabilities (Non-Goals for Phase 8)
+
+The following capabilities belong to future enhancement roadmaps:
+
+1. **Automated SLA Management & Escalation Timers**:
    Turnaround countdown timers, overdue alerts, and hierarchical administrative escalation.
-3. **Duplicate Detection & Incident Clustering**:
+2. **Duplicate Detection & Incident Clustering**:
    Spatial and semantic grouping of multiple citizen submissions into a single consolidated operational case.
-4. **Notifications & Multi-Channel Alerts**:
+3. **Notifications & Multi-Channel Alerts**:
    Email, WhatsApp, or SMS updates sent to citizens and field staff upon status changes.
-5. **Offline Support & Mobile Sync**:
+4. **Offline Support & Mobile Sync**:
    Field worker offline caching and sync for intermittent rural connectivity.
-6. **Analytics Dashboards & Performance Heatmaps**:
+5. **Analytics Dashboards & Performance Heatmaps**:
    Authority-wide SLA metrics, ward-level resolution times, and departmental responsiveness rankings.
+
 

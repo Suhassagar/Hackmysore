@@ -496,3 +496,62 @@ Citizens can view their report's operational journey via `GET /api/reports/:id/c
 - If event persistence fails, status changes are rolled back to prevent inconsistent states.
 - Duplicate status requests (e.g., double-clicking buttons) are handled idempotently without emitting redundant events.
 
+---
+
+## 7. Phase 8: Resolution Verification Architecture (`RESOLVED ≠ VERIFIED`)
+
+### 1. Fundamental Principle: Operational Claim vs. Independent Confirmation
+CivicFlow enforces strict semantic separation between:
+- **`RESOLVED`**: The operational claim made by municipal field staff that physical remediation was performed.
+- **`VERIFIED`**: The independent physical confirmation by the reporting citizen that the issue has actually been fixed.
+- **`DISPUTED`**: The citizen's formal claim that the issue persists despite the staff's resolution attempt.
+- **`CASE_REOPENED`**: The controlled administrative action returning the case to `IN_PROGRESS` under the identical case number (`CIV-YYYY-XXXXXX`).
+
+### 2. State & Verification Machine
+
+```
+[ IN_PROGRESS ] ──► Staff Resolves with Note + Photo ──► [ RESOLVED ]
+                                                                │
+                                              Verification Record Created (PENDING)
+                                                                │
+                                 ┌──────────────────────────────┴──────────────────────────────┐
+                                 ▼                                                             ▼
+                     [ Citizen Confirms Fixed ]                                    [ Citizen Disputes ]
+                                 │                                                             │
+                    Verification = VERIFIED                                       Verification = DISPUTED
+                   Immutable Event: RESOLUTION_VERIFIED                          Immutable Event: RESOLUTION_DISPUTED
+                                 │                                                             │
+                         [ CASE VERIFIED ]                                            Staff Queue Alert
+                                                                                               │
+                                                                                 Authorized Staff Reopens Case
+                                                                                               │
+                                                                                 Case returns to [ IN_PROGRESS ]
+                                                                                 Cycle incremented: Cycle 2 begins
+```
+
+### 3. Resolution Evidence Storage (`resolution_evidence`)
+When staff marks a case as `RESOLVED`, resolution evidence is captured:
+- `case_id`: Reference to `civic_cases.id`
+- `submitted_by`: Authenticated staff user ID
+- `evidence_type`: `PHOTO`
+- `media_url`: Media storage URI for resolution photo
+- `resolution_note`: Mandatory description of work performed
+- `created_at`: Server timestamp
+
+### 4. Verification Tracking (`case_verifications`)
+Each resolution cycle is tracked in `case_verifications`:
+- `case_id`: Target case
+- `resolution_evidence_id`: Reference to corresponding evidence record
+- `status`: `PENDING`, `VERIFIED`, `DISPUTED`
+- `cycle_number`: Sequential cycle counter (1, 2, ...)
+- `verified_by` / `verified_at`: Citizen verification identity & timestamp
+- `disputed_by` / `disputed_at` / `dispute_reason`: Citizen dispute details
+- `reopened_by` / `reopened_at` / `reopen_notes`: Staff reopening details
+
+### 5. Security & Anti-Fraud Controls
+- **Staff Forbidden from Verifying (403)**: Field staff cannot mark cases as verified on behalf of citizens.
+- **IDOR Guard (403)**: Only the authenticated citizen who created the original report has permission to confirm or dispute resolution.
+- **Unresolved Gate (400)**: Verification can only be invoked on cases currently in `RESOLVED` status.
+- **Mandatory Dispute Reason (400)**: Citizen disputes require non-empty text explaining why the issue persists.
+- **Auditable Reopening**: Staff cannot reopen cases arbitrarily; cases must be in `DISPUTED` status, and reopening requires a documented justification note.
+

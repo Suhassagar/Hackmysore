@@ -58,6 +58,8 @@ router.get('/cases', requireAuth, requireRole('STAFF', 'ADMIN'), async (req, res
       limit = 20,
       view = 'active',
       status,
+      verification_status,
+      verificationStatus,
       authorityId,
       departmentId,
       assignedTo,
@@ -70,6 +72,7 @@ router.get('/cases', requireAuth, requireRole('STAFF', 'ADMIN'), async (req, res
         limit,
         view,
         status,
+        verification_status: verification_status || verificationStatus,
         authority_id: authorityId,
         department_id: departmentId,
         assigned_to: assignedTo,
@@ -97,17 +100,21 @@ router.get('/cases', requireAuth, requireRole('STAFF', 'ADMIN'), async (req, res
 /**
  * GET /api/staff/cases/:id
  * Retrieves detailed case information with citizen report, AI analysis,
- * jurisdiction, routing decision, and chronological case event timeline.
+ * jurisdiction, routing decision, verification state, and chronological case event timeline.
  */
 router.get('/cases/:id', requireAuth, requireRole('STAFF', 'ADMIN'), async (req, res) => {
   try {
     const { id } = req.params;
     const caseItem = await caseService.getCaseById(id, req.user);
     const timeline = await caseService.getCaseTimeline(id, req.user);
+    const verification = await caseService.getCaseVerification(id, req.user);
 
     res.status(200).json({
       case: caseItem,
       timeline,
+      verification: verification.current_verification || null,
+      verification_history: verification.history || [],
+      evidence: verification.evidence || [],
     });
   } catch (err) {
     console.error(`[Staff API Error] Failed to fetch case ${req.params.id}:`, err);
@@ -122,12 +129,12 @@ router.get('/cases/:id', requireAuth, requireRole('STAFF', 'ADMIN'), async (req,
  * PATCH /api/staff/cases/:id/status
  * Controlled state transition endpoint.
  * Validates transition rules, required reasons (ON_HOLD), notes (RESOLVED),
- * and creates atomic case event audit log entry.
+ * optional resolution evidence (Phase 8), and creates atomic case event audit log entry.
  */
 router.patch('/cases/:id/status', requireAuth, requireRole('STAFF', 'ADMIN'), async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, note, on_hold_reason, on_hold_notes } = req.body;
+    const { status, note, on_hold_reason, on_hold_notes, evidence, photoData, media_url, latitude, longitude } = req.body;
 
     const updatedCase = await caseService.updateCaseStatus(
       id,
@@ -136,6 +143,7 @@ router.patch('/cases/:id/status', requireAuth, requireRole('STAFF', 'ADMIN'), as
         note,
         on_hold_reason,
         on_hold_notes,
+        evidence: evidence || (photoData || media_url ? { photoData, media_url, latitude, longitude } : null),
       },
       req.user
     );
@@ -152,6 +160,77 @@ router.patch('/cases/:id/status', requireAuth, requireRole('STAFF', 'ADMIN'), as
     res.status(err.status || 500).json({
       error: err.status === 400 ? 'Bad Request' : err.status === 403 ? 'Forbidden' : err.status === 404 ? 'Not Found' : 'Internal Server Error',
       message: err.message || 'Failed to update case status.',
+    });
+  }
+});
+
+/**
+ * POST /api/staff/cases/:id/resolve
+ * Dedicated Phase 8 endpoint: Marks case as RESOLVED with mandatory note & optional evidence.
+ */
+router.post('/cases/:id/resolve', requireAuth, requireRole('STAFF', 'ADMIN'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { note, evidence, photoData, media_url, latitude, longitude } = req.body;
+
+    const updatedCase = await caseService.resolveCaseWithEvidence(
+      id,
+      {
+        note,
+        evidence: evidence || (photoData || media_url ? { photoData, media_url, latitude, longitude } : null),
+      },
+      req.user
+    );
+
+    const timeline = await caseService.getCaseTimeline(id, req.user);
+    const verification = await caseService.getCaseVerification(id, req.user);
+
+    res.status(200).json({
+      message: 'Case marked as RESOLVED with resolution evidence.',
+      case: updatedCase,
+      verification: verification.current_verification,
+      timeline,
+    });
+  } catch (err) {
+    console.error(`[Staff API Error] Resolution failed for case ${req.params.id}:`, err);
+    res.status(err.status || 500).json({
+      error: err.status === 400 ? 'Bad Request' : err.status === 403 ? 'Forbidden' : err.status === 404 ? 'Not Found' : 'Internal Server Error',
+      message: err.message || 'Failed to resolve case.',
+    });
+  }
+});
+
+/**
+ * POST /api/staff/cases/:id/reopen
+ * Controlled Phase 8 action: Reopens a DISPUTED case back to IN_PROGRESS.
+ */
+router.post('/cases/:id/reopen', requireAuth, requireRole('STAFF', 'ADMIN'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { note, reopen_notes } = req.body;
+
+    const updatedCase = await caseService.reopenDisputedCase(
+      id,
+      {
+        note: note || reopen_notes || 'Reopened following citizen dispute.',
+      },
+      req.user
+    );
+
+    const timeline = await caseService.getCaseTimeline(id, req.user);
+    const verification = await caseService.getCaseVerification(id, req.user);
+
+    res.status(200).json({
+      message: 'Disputed case successfully reopened to IN_PROGRESS.',
+      case: updatedCase,
+      verification: verification.current_verification,
+      timeline,
+    });
+  } catch (err) {
+    console.error(`[Staff API Error] Reopen failed for case ${req.params.id}:`, err);
+    res.status(err.status || 500).json({
+      error: err.status === 400 ? 'Bad Request' : err.status === 403 ? 'Forbidden' : err.status === 404 ? 'Not Found' : 'Internal Server Error',
+      message: err.message || 'Failed to reopen case.',
     });
   }
 });

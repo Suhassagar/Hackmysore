@@ -24,6 +24,10 @@ const fallbackCases = new Map(); // case_id -> case
 const fallbackCaseEvents = []; // array of case events
 let fallbackCaseSeq = 10001;
 
+// Phase 8: Resolution Evidence & Case Verifications
+const fallbackResolutionEvidence = new Map(); // id -> resolution evidence
+const fallbackCaseVerifications = new Map(); // id -> case verification
+
 function generateFallbackCaseNumber() {
   const year = new Date().getFullYear();
   const num = fallbackCaseSeq++;
@@ -578,6 +582,63 @@ async function initDb() {
       CREATE INDEX IF NOT EXISTS idx_case_events_case_id ON case_events(case_id);
       CREATE INDEX IF NOT EXISTS idx_case_events_actor ON case_events(actor_user_id);
       CREATE INDEX IF NOT EXISTS idx_case_events_created_at ON case_events(created_at);
+
+      -- Phase 8: Resolution Verification (RESOLVED != VERIFIED)
+      ALTER TABLE case_events DROP CONSTRAINT IF EXISTS case_events_event_type_check;
+      ALTER TABLE case_events ADD CONSTRAINT case_events_event_type_check CHECK (event_type IN (
+        'CASE_CREATED',
+        'CASE_ASSIGNED',
+        'CASE_REASSIGNED',
+        'CASE_ACKNOWLEDGED',
+        'CASE_STARTED',
+        'CASE_ON_HOLD',
+        'CASE_RESUMED',
+        'CASE_NOTE_ADDED',
+        'CASE_RESOLVED',
+        'CASE_CLOSED',
+        'RESOLUTION_SUBMITTED',
+        'RESOLUTION_VERIFIED',
+        'RESOLUTION_DISPUTED',
+        'CASE_REOPENED'
+      ));
+
+      CREATE TABLE IF NOT EXISTS resolution_evidence (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        case_id UUID NOT NULL REFERENCES civic_cases(id) ON DELETE CASCADE,
+        submitted_by UUID NOT NULL REFERENCES users(id),
+        evidence_type VARCHAR(50) NOT NULL DEFAULT 'PHOTO' CHECK (evidence_type IN ('PHOTO', 'DOCUMENT', 'COMPLETION_IMAGE', 'NOTE_ONLY')),
+        media_url TEXT,
+        resolution_note TEXT NOT NULL,
+        latitude NUMERIC(10, 7),
+        longitude NUMERIC(10, 7),
+        metadata JSONB DEFAULT '{}'::jsonb,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_resolution_evidence_case_id ON resolution_evidence(case_id);
+      CREATE INDEX IF NOT EXISTS idx_resolution_evidence_submitted_by ON resolution_evidence(submitted_by);
+      CREATE INDEX IF NOT EXISTS idx_resolution_evidence_created_at ON resolution_evidence(created_at);
+
+      CREATE TABLE IF NOT EXISTS case_verifications (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        case_id UUID NOT NULL REFERENCES civic_cases(id) ON DELETE CASCADE,
+        resolution_evidence_id UUID REFERENCES resolution_evidence(id) ON DELETE SET NULL,
+        status VARCHAR(50) NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'VERIFIED', 'DISPUTED')),
+        resolution_note TEXT NOT NULL,
+        cycle_number INT NOT NULL DEFAULT 1,
+        verified_by UUID REFERENCES users(id),
+        verified_at TIMESTAMPTZ,
+        disputed_by UUID REFERENCES users(id),
+        disputed_at TIMESTAMPTZ,
+        dispute_reason TEXT,
+        reopened_by UUID REFERENCES users(id),
+        reopened_at TIMESTAMPTZ,
+        reopen_notes TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_case_verifications_case_id ON case_verifications(case_id);
+      CREATE INDEX IF NOT EXISTS idx_case_verifications_status ON case_verifications(status);
+      CREATE INDEX IF NOT EXISTS idx_case_verifications_cycle ON case_verifications(case_id, cycle_number);
     `);
     console.log('[DB] PostGIS, Jurisdictions, Responsibility Rules, and Civic Cases schemas verified in PostgreSQL.');
     client.release();
@@ -2166,7 +2227,16 @@ const db = {
       if (res.rows.length === 0) return null;
       const caseItem = res.rows[0];
       const events = await this.getCaseEventsByCaseId(id);
-      return { ...caseItem, events };
+      const currentVerification = await this.getCurrentVerificationByCaseId(id);
+      const latestEvidence = (await this.getResolutionEvidenceByCaseId(id))[0] || null;
+      return {
+        ...caseItem,
+        events,
+        current_verification: currentVerification,
+        verification: currentVerification,
+        latest_evidence: latestEvidence,
+        evidence: latestEvidence,
+      };
     }
 
     const c = fallbackCases.get(id);
@@ -2179,6 +2249,8 @@ const db = {
     const assignedUser = c.assigned_to ? Array.from(fallbackUsers.values()).find((u) => u.id === c.assigned_to) : null;
     const resolvedUser = c.resolved_by ? Array.from(fallbackUsers.values()).find((u) => u.id === c.resolved_by) : null;
     const events = await this.getCaseEventsByCaseId(id);
+    const currentVerification = await this.getCurrentVerificationByCaseId(id);
+    const latestEvidence = (await this.getResolutionEvidenceByCaseId(id))[0] || null;
 
     return {
       ...c,
@@ -2201,6 +2273,10 @@ const db = {
       assigned_to_email: assignedUser?.email || null,
       resolved_by_name: resolvedUser?.name || null,
       events,
+      current_verification: currentVerification,
+      verification: currentVerification,
+      latest_evidence: latestEvidence,
+      evidence: latestEvidence,
     };
   },
 
@@ -2219,6 +2295,7 @@ const db = {
   async getCases(options = {}) {
     const {
       status,
+      verification_status,
       authority_id,
       department_id,
       assigned_to,
@@ -2282,6 +2359,12 @@ const db = {
         dataQuery += " AND c.status != 'CLOSED'";
       }
 
+      if (verification_status) {
+        params.push(verification_status);
+        countQuery += ` AND EXISTS (SELECT 1 FROM case_verifications cv WHERE cv.case_id = c.id AND cv.status = $${params.length})`;
+        dataQuery += ` AND EXISTS (SELECT 1 FROM case_verifications cv WHERE cv.case_id = c.id AND cv.status = $${params.length})`;
+      }
+
       if (authority_id) {
         params.push(authority_id);
         countQuery += ` AND c.authority_id = $${params.length}`;
@@ -2306,8 +2389,19 @@ const db = {
       dataQuery += ` ORDER BY c.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
       const dataRes = await pool.query(dataQuery, [...params, limitNum, offset]);
 
+      const items = await Promise.all(
+        dataRes.rows.map(async (item) => {
+          const ver = await this.getCurrentVerificationByCaseId(item.id);
+          return {
+            ...item,
+            current_verification: ver,
+            verification: ver,
+          };
+        })
+      );
+
       return {
-        items: dataRes.rows,
+        items,
         total,
         page: pageNum,
         limit: limitNum,
@@ -2326,6 +2420,15 @@ const db = {
       list = list.filter((c) => c.status === status);
     } else if (view === 'active') {
       list = list.filter((c) => c.status !== 'CLOSED');
+    }
+
+    if (verification_status) {
+      list = list.filter((c) => {
+        const ver = Array.from(fallbackCaseVerifications.values())
+          .filter((v) => v.case_id === c.id)
+          .sort((a, b) => (b.cycle_number || 0) - (a.cycle_number || 0) || new Date(b.created_at) - new Date(a.created_at))[0];
+        return ver && ver.status === verification_status;
+      });
     }
 
     if (authority_id) {
@@ -2354,6 +2457,9 @@ const db = {
       const dept = fallbackDepartments.get(c.department_id);
       const jur = c.jurisdiction_id ? fallbackJurisdictions.get(c.jurisdiction_id) : null;
       const assignUser = c.assigned_to ? Array.from(fallbackUsers.values()).find((u) => u.id === c.assigned_to) : null;
+      const ver = Array.from(fallbackCaseVerifications.values())
+        .filter((v) => v.case_id === c.id)
+        .sort((a, b) => (b.cycle_number || 0) - (a.cycle_number || 0) || new Date(b.created_at) - new Date(a.created_at))[0] || null;
       return {
         ...c,
         category: rep?.category,
@@ -2366,6 +2472,8 @@ const db = {
         department_name: dept?.name,
         jurisdiction_name: jur?.name,
         assigned_to_name: assignUser?.name || null,
+        current_verification: ver,
+        verification: ver,
       };
     });
 
@@ -2631,6 +2739,246 @@ const db = {
           actor_role: u?.role || 'STAFF',
         };
       });
+  },
+
+  // Phase 8: Resolution Evidence & Case Verification Methods
+  async createResolutionEvidence({
+    caseId,
+    submittedBy,
+    evidenceType = 'PHOTO',
+    mediaUrl,
+    resolutionNote,
+    latitude = null,
+    longitude = null,
+    metadata = {},
+  }) {
+    if (isPostgresConnected && pool) {
+      const res = await pool.query(
+        `INSERT INTO resolution_evidence (
+          case_id, submitted_by, evidence_type, media_url, resolution_note, latitude, longitude, metadata
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        RETURNING *`,
+        [caseId, submittedBy, evidenceType, mediaUrl, resolutionNote, latitude, longitude, JSON.stringify(metadata)]
+      );
+      return res.rows[0];
+    }
+
+    const ev = {
+      id: uuidv4(),
+      case_id: caseId,
+      submitted_by: submittedBy,
+      evidence_type: evidenceType,
+      media_url: mediaUrl,
+      resolution_note: resolutionNote,
+      latitude,
+      longitude,
+      metadata,
+      created_at: new Date().toISOString(),
+    };
+    fallbackResolutionEvidence.set(ev.id, ev);
+    return ev;
+  },
+
+  async getResolutionEvidenceByCaseId(caseId) {
+    if (isPostgresConnected && pool) {
+      const res = await pool.query(
+        `SELECT re.*, u.name AS submitted_by_name, u.email AS submitted_by_email
+         FROM resolution_evidence re
+         JOIN users u ON re.submitted_by = u.id
+         WHERE re.case_id = $1
+         ORDER BY re.created_at DESC`,
+        [caseId]
+      );
+      return res.rows;
+    }
+
+    return Array.from(fallbackResolutionEvidence.values())
+      .filter((ev) => ev.case_id === caseId)
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+      .map((ev) => {
+        const u = Array.from(fallbackUsers.values()).find((user) => user.id === ev.submitted_by);
+        return {
+          ...ev,
+          submitted_by_name: u?.name || 'Staff User',
+          submitted_by_email: u?.email || null,
+        };
+      });
+  },
+
+  async createCaseVerification({
+    caseId,
+    resolutionEvidenceId = null,
+    resolutionNote,
+    cycleNumber = 1,
+    status = 'PENDING',
+  }) {
+    if (isPostgresConnected && pool) {
+      const res = await pool.query(
+        `INSERT INTO case_verifications (
+          case_id, resolution_evidence_id, status, resolution_note, cycle_number
+        ) VALUES ($1, $2, $3, $4, $5)
+        RETURNING *`,
+        [caseId, resolutionEvidenceId, status, resolutionNote, cycleNumber]
+      );
+      return res.rows[0];
+    }
+
+    const ver = {
+      id: uuidv4(),
+      case_id: caseId,
+      resolution_evidence_id: resolutionEvidenceId,
+      status,
+      resolution_note: resolutionNote,
+      cycle_number: cycleNumber,
+      verified_by: null,
+      verified_at: null,
+      disputed_by: null,
+      disputed_at: null,
+      dispute_reason: null,
+      reopened_by: null,
+      reopened_at: null,
+      reopen_notes: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    fallbackCaseVerifications.set(ver.id, ver);
+    return ver;
+  },
+
+  async getCurrentVerificationByCaseId(caseId) {
+    if (isPostgresConnected && pool) {
+      const res = await pool.query(
+        `SELECT
+          cv.*,
+          u_ver.name AS verified_by_name,
+          u_disp.name AS disputed_by_name,
+          u_reopen.name AS reopened_by_name,
+          re.media_url AS evidence_media_url,
+          re.evidence_type
+        FROM case_verifications cv
+        LEFT JOIN users u_ver ON cv.verified_by = u_ver.id
+        LEFT JOIN users u_disp ON cv.disputed_by = u_disp.id
+        LEFT JOIN users u_reopen ON cv.reopened_by = u_reopen.id
+        LEFT JOIN resolution_evidence re ON cv.resolution_evidence_id = re.id
+        WHERE cv.case_id = $1
+        ORDER BY cv.cycle_number DESC, cv.created_at DESC
+        LIMIT 1`,
+        [caseId]
+      );
+      return res.rows[0] || null;
+    }
+
+    const matches = Array.from(fallbackCaseVerifications.values())
+      .filter((v) => v.case_id === caseId)
+      .sort((a, b) => (b.cycle_number || 0) - (a.cycle_number || 0) || new Date(b.created_at) - new Date(a.created_at));
+    if (matches.length === 0) return null;
+    const v = matches[0];
+    const uVer = v.verified_by ? Array.from(fallbackUsers.values()).find((u) => u.id === v.verified_by) : null;
+    const uDisp = v.disputed_by ? Array.from(fallbackUsers.values()).find((u) => u.id === v.disputed_by) : null;
+    const uReopen = v.reopened_by ? Array.from(fallbackUsers.values()).find((u) => u.id === v.reopened_by) : null;
+    const ev = v.resolution_evidence_id ? fallbackResolutionEvidence.get(v.resolution_evidence_id) : null;
+    return {
+      ...v,
+      verified_by_name: uVer?.name || null,
+      disputed_by_name: uDisp?.name || null,
+      reopened_by_name: uReopen?.name || null,
+      evidence_media_url: ev?.media_url || null,
+      evidence_type: ev?.evidence_type || null,
+    };
+  },
+
+  async getVerificationHistoryByCaseId(caseId) {
+    if (isPostgresConnected && pool) {
+      const res = await pool.query(
+        `SELECT
+          cv.*,
+          u_ver.name AS verified_by_name,
+          u_disp.name AS disputed_by_name,
+          u_reopen.name AS reopened_by_name,
+          re.media_url AS evidence_media_url,
+          re.evidence_type
+        FROM case_verifications cv
+        LEFT JOIN users u_ver ON cv.verified_by = u_ver.id
+        LEFT JOIN users u_disp ON cv.disputed_by = u_disp.id
+        LEFT JOIN users u_reopen ON cv.reopened_by = u_reopen.id
+        LEFT JOIN resolution_evidence re ON cv.resolution_evidence_id = re.id
+        WHERE cv.case_id = $1
+        ORDER BY cv.cycle_number ASC, cv.created_at ASC`,
+        [caseId]
+      );
+      return res.rows;
+    }
+
+    return Array.from(fallbackCaseVerifications.values())
+      .filter((v) => v.case_id === caseId)
+      .sort((a, b) => (a.cycle_number || 0) - (b.cycle_number || 0) || new Date(a.created_at) - new Date(b.created_at))
+      .map((v) => {
+        const uVer = v.verified_by ? Array.from(fallbackUsers.values()).find((u) => u.id === v.verified_by) : null;
+        const uDisp = v.disputed_by ? Array.from(fallbackUsers.values()).find((u) => u.id === v.disputed_by) : null;
+        const uReopen = v.reopened_by ? Array.from(fallbackUsers.values()).find((u) => u.id === v.reopened_by) : null;
+        const ev = v.resolution_evidence_id ? fallbackResolutionEvidence.get(v.resolution_evidence_id) : null;
+        return {
+          ...v,
+          verified_by_name: uVer?.name || null,
+          disputed_by_name: uDisp?.name || null,
+          reopened_by_name: uReopen?.name || null,
+          evidence_media_url: ev?.media_url || null,
+          evidence_type: ev?.evidence_type || null,
+        };
+      });
+  },
+
+  async updateCaseVerification(verificationId, updates = {}) {
+    const fields = [];
+    const params = [verificationId];
+    let idx = 2;
+
+    for (const [key, val] of Object.entries(updates)) {
+      fields.push(`${key} = $${idx}`);
+      params.push(val);
+      idx++;
+    }
+    fields.push(`updated_at = NOW()`);
+
+    if (isPostgresConnected && pool) {
+      const res = await pool.query(
+        `UPDATE case_verifications SET ${fields.join(', ')} WHERE id = $1 RETURNING *`,
+        params
+      );
+      return res.rows[0] || null;
+    }
+
+    const v = fallbackCaseVerifications.get(verificationId);
+    if (!v) return null;
+    Object.assign(v, updates, { updated_at: new Date().toISOString() });
+    return v;
+  },
+
+  async recordCaseEvent(caseId, { eventType, fromStatus = null, toStatus = null, actorUserId, note = null, metadata = {} }) {
+    if (isPostgresConnected && pool) {
+      const res = await pool.query(
+        `INSERT INTO case_events (
+          case_id, event_type, from_status, to_status, actor_user_id, note, metadata
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING *`,
+        [caseId, eventType, fromStatus, toStatus, actorUserId, note, JSON.stringify(metadata)]
+      );
+      return res.rows[0];
+    }
+
+    const ev = {
+      id: uuidv4(),
+      case_id: caseId,
+      event_type: eventType,
+      from_status: fromStatus,
+      to_status: toStatus,
+      actor_user_id: actorUserId,
+      note,
+      metadata,
+      created_at: new Date().toISOString(),
+    };
+    fallbackCaseEvents.push(ev);
+    return ev;
   },
 };
 

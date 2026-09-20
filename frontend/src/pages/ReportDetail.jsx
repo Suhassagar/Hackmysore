@@ -24,11 +24,16 @@ import {
   Briefcase,
   PauseCircle,
   PlayCircle,
+  ShieldCheck,
+  RotateCcw,
+  ThumbsUp,
+  ThumbsDown,
+  X,
 } from 'lucide-react';
 
 export const ReportDetail = () => {
   const { id } = useParams();
-  const { token, role } = useAuth();
+  const { token, user, role } = useAuth();
   const [report, setReport] = useState(null);
   const [analysis, setAnalysis] = useState(null);
   const [jurisdiction, setJurisdiction] = useState(null);
@@ -43,6 +48,17 @@ export const ReportDetail = () => {
   const [error, setError] = useState('');
   const [analysisError, setAnalysisError] = useState('');
   const [isForbidden, setIsForbidden] = useState(false);
+
+  // Phase 8 Resolution Verification State
+  const [verification, setVerification] = useState(null);
+  const [verificationEvidence, setVerificationEvidence] = useState(null);
+  const [verificationHistory, setVerificationHistory] = useState([]);
+  const [confirmingVerification, setConfirmingVerification] = useState(false);
+  const [disputeSubmitting, setDisputeSubmitting] = useState(false);
+  const [showDisputeModal, setShowDisputeModal] = useState(false);
+  const [disputeReason, setDisputeReason] = useState('');
+  const [verificationActionError, setVerificationActionError] = useState('');
+  const [verificationActionSuccess, setVerificationActionSuccess] = useState('');
 
   // Phase 6 Staff Review State
   const [authorities, setAuthorities] = useState([]);
@@ -128,9 +144,33 @@ export const ReportDetail = () => {
           if (caseRes.ok && caseRes.data?.case) {
             setCivicCase(caseRes.data.case);
             setCaseTimeline(caseRes.data.timeline || []);
+            if (caseRes.data.verification) {
+              setVerification(caseRes.data.verification);
+            }
+            if (caseRes.data.evidence) {
+              setVerificationEvidence(caseRes.data.evidence);
+            }
           }
         } catch (cErr) {
           console.warn('[ReportDetail] Could not load case for report:', cErr.message);
+        }
+
+        // 8. Fetch Phase 8 Verification Snapshot & History
+        try {
+          const vRes = await api.getReportVerification(id, token);
+          if (vRes.ok && vRes.data) {
+            if (vRes.data.current_verification) {
+              setVerification(vRes.data.current_verification);
+            }
+            if (vRes.data.evidence) {
+              setVerificationEvidence(vRes.data.evidence);
+            }
+            if (vRes.data.verification_history) {
+              setVerificationHistory(vRes.data.verification_history);
+            }
+          }
+        } catch (vErr) {
+          // Verification may not exist yet if case is not resolved
         }
       } catch (err) {
         setError(err.message || 'Network error.');
@@ -141,6 +181,67 @@ export const ReportDetail = () => {
 
     fetchData();
   }, [id, token, role]);
+
+  const handleConfirmVerification = async () => {
+    setConfirmingVerification(true);
+    setVerificationActionError('');
+    setVerificationActionSuccess('');
+    try {
+      const res = await api.confirmVerification(id, token);
+      if (res.ok) {
+        setVerificationActionSuccess('Thank you! You have independently verified that this civic issue was resolved.');
+        if (res.data?.verification) {
+          setVerification(res.data.verification);
+        }
+        // Refresh case & timeline
+        const caseRes = await api.getReportCase(id, token);
+        if (caseRes.ok && caseRes.data?.case) {
+          setCivicCase(caseRes.data.case);
+          setCaseTimeline(caseRes.data.timeline || []);
+        }
+      } else {
+        setVerificationActionError(res.data?.message || 'Failed to verify resolution.');
+      }
+    } catch (err) {
+      setVerificationActionError(err.message || 'Error submitting confirmation.');
+    } finally {
+      setConfirmingVerification(false);
+    }
+  };
+
+  const handleDisputeSubmit = async (e) => {
+    e.preventDefault();
+    if (!disputeReason.trim() || disputeReason.trim().length < 10) {
+      setVerificationActionError('Dispute reason must be at least 10 characters detailing why the issue persists.');
+      return;
+    }
+    setDisputeSubmitting(true);
+    setVerificationActionError('');
+    setVerificationActionSuccess('');
+    try {
+      const res = await api.disputeVerification(id, disputeReason.trim(), token);
+      if (res.ok) {
+        setVerificationActionSuccess('Dispute submitted. Municipal staff have been alerted to reinvestigate.');
+        setShowDisputeModal(false);
+        setDisputeReason('');
+        if (res.data?.verification) {
+          setVerification(res.data.verification);
+        }
+        // Refresh case & timeline
+        const caseRes = await api.getReportCase(id, token);
+        if (caseRes.ok && caseRes.data?.case) {
+          setCivicCase(caseRes.data.case);
+          setCaseTimeline(caseRes.data.timeline || []);
+        }
+      } else {
+        setVerificationActionError(res.data?.message || 'Failed to submit dispute.');
+      }
+    } catch (err) {
+      setVerificationActionError(err.message || 'Error submitting dispute.');
+    } finally {
+      setDisputeSubmitting(false);
+    }
+  };
 
   const handleReviewSubmit = async () => {
     setReviewSubmitting(true);
@@ -500,7 +601,7 @@ export const ReportDetail = () => {
                 );
               })()}
 
-              {/* Stage 5: Resolution */}
+              {/* Stage 5: Staff Resolution */}
               {(() => {
                 const isResolved = ['RESOLVED', 'CLOSED'].includes(civicCase?.status);
                 return (
@@ -513,7 +614,7 @@ export const ReportDetail = () => {
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: isResolved ? '#6ee7b7' : '#94a3b8', fontSize: '0.8rem', fontWeight: 600 }}>
-                      {isResolved ? <Check size={14} /> : '○'} Resolution
+                      {isResolved ? <Check size={14} /> : '○'} Staff Resolved
                     </div>
                     <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '0.2rem' }}>
                       {isResolved ? 'Claimed by staff' : 'Resolution pending'}
@@ -521,8 +622,278 @@ export const ReportDetail = () => {
                   </div>
                 );
               })()}
+
+              {/* Stage 6: Citizen Verification (RESOLVED != VERIFIED) */}
+              {(() => {
+                const isVerified = verification?.status === 'VERIFIED';
+                const isDisputed = verification?.status === 'DISPUTED';
+                const isPendingVer = verification?.status === 'PENDING';
+                const isReopened = civicCase?.status === 'IN_PROGRESS' && caseTimeline.some((e) => e.event_type === 'CASE_REOPENED');
+
+                const bg = isVerified
+                  ? 'rgba(16, 185, 129, 0.18)'
+                  : isDisputed
+                  ? 'rgba(239, 68, 68, 0.18)'
+                  : isReopened
+                  ? 'rgba(168, 85, 247, 0.18)'
+                  : isPendingVer
+                  ? 'rgba(245, 158, 11, 0.18)'
+                  : 'rgba(255, 255, 255, 0.04)';
+
+                const border = isVerified
+                  ? 'rgba(16, 185, 129, 0.4)'
+                  : isDisputed
+                  ? 'rgba(239, 68, 68, 0.4)'
+                  : isReopened
+                  ? 'rgba(168, 85, 247, 0.4)'
+                  : isPendingVer
+                  ? 'rgba(245, 158, 11, 0.4)'
+                  : 'rgba(255, 255, 255, 0.08)';
+
+                const color = isVerified
+                  ? '#6ee7b7'
+                  : isDisputed
+                  ? '#fca5a5'
+                  : isReopened
+                  ? '#d8b4fe'
+                  : isPendingVer
+                  ? '#fcd34d'
+                  : '#94a3b8';
+
+                return (
+                  <div
+                    style={{
+                      padding: '0.75rem',
+                      borderRadius: '8px',
+                      background: bg,
+                      border: `1px solid ${border}`,
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color, fontSize: '0.8rem', fontWeight: 600 }}>
+                      {isVerified ? (
+                        <ShieldCheck size={14} />
+                      ) : isDisputed ? (
+                        <AlertTriangle size={14} />
+                      ) : isReopened ? (
+                        <RotateCcw size={14} />
+                      ) : isPendingVer ? (
+                        '●'
+                      ) : (
+                        '○'
+                      )}{' '}
+                      Citizen Verification
+                    </div>
+                    <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '0.2rem' }}>
+                      {isVerified
+                        ? 'Citizen Confirmed ✓'
+                        : isDisputed
+                        ? 'Disputed by Citizen ⚠'
+                        : isReopened
+                        ? 'Reopened for Rework'
+                        : isPendingVer
+                        ? 'Awaiting Confirmation'
+                        : 'Awaiting Fix'}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </div>
+
+          {/* Phase 8: Citizen Resolution Verification Card */}
+          {(civicCase?.status === 'RESOLVED' || verification) && (
+            <div
+              id="citizen-resolution-verification-card"
+              style={{
+                marginBottom: '1.25rem',
+                borderRadius: 'var(--radius-md)',
+                padding: '1.25rem',
+                border:
+                  verification?.status === 'VERIFIED'
+                    ? '1px solid rgba(16, 185, 129, 0.5)'
+                    : verification?.status === 'DISPUTED'
+                    ? '1px solid rgba(239, 68, 68, 0.5)'
+                    : '1px solid rgba(245, 158, 11, 0.5)',
+                background:
+                  verification?.status === 'VERIFIED'
+                    ? 'linear-gradient(180deg, rgba(6, 78, 59, 0.35) 0%, rgba(2, 44, 34, 0.55) 100%)'
+                    : verification?.status === 'DISPUTED'
+                    ? 'linear-gradient(180deg, rgba(127, 29, 29, 0.35) 0%, rgba(69, 10, 10, 0.55) 100%)'
+                    : 'linear-gradient(180deg, rgba(120, 53, 15, 0.3) 0%, rgba(69, 26, 3, 0.5) 100%)',
+              }}
+            >
+              {/* Card Header */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  {verification?.status === 'VERIFIED' ? (
+                    <ShieldCheck size={22} color="#10b981" />
+                  ) : verification?.status === 'DISPUTED' ? (
+                    <AlertTriangle size={22} color="#ef4444" />
+                  ) : (
+                    <Clock size={22} color="#f59e0b" />
+                  )}
+                  <div>
+                    <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0, color: '#f8fafc' }}>
+                      {verification?.status === 'VERIFIED'
+                        ? 'Resolution Independently Verified by Citizen'
+                        : verification?.status === 'DISPUTED'
+                        ? 'Resolution Disputed by Citizen'
+                        : 'Staff Claimed Resolution — Citizen Verification Required'}
+                    </h3>
+                    <div style={{ fontSize: '0.75rem', color: '#cbd5e1', marginTop: '0.15rem' }}>
+                      Phase 8 Verification Standard: <strong>RESOLVED ≠ VERIFIED</strong>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Status Badge */}
+                <span
+                  style={{
+                    padding: '0.3rem 0.75rem',
+                    borderRadius: '9999px',
+                    fontSize: '0.78rem',
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    background:
+                      verification?.status === 'VERIFIED'
+                        ? 'rgba(16, 185, 129, 0.25)'
+                        : verification?.status === 'DISPUTED'
+                        ? 'rgba(239, 68, 68, 0.25)'
+                        : 'rgba(245, 158, 11, 0.25)',
+                    color:
+                      verification?.status === 'VERIFIED'
+                        ? '#6ee7b7'
+                        : verification?.status === 'DISPUTED'
+                        ? '#fca5a5'
+                        : '#fcd34d',
+                    border: `1px solid ${
+                      verification?.status === 'VERIFIED'
+                        ? '#10b981'
+                        : verification?.status === 'DISPUTED'
+                        ? '#ef4444'
+                        : '#f59e0b'
+                    }`,
+                  }}
+                >
+                  {verification?.status || 'PENDING VERIFICATION'}
+                </span>
+              </div>
+
+              {/* Action Error or Success Banner */}
+              {verificationActionError && (
+                <div style={{ padding: '0.75rem', borderRadius: '6px', background: 'rgba(239, 68, 68, 0.2)', border: '1px solid #ef4444', color: '#fca5a5', fontSize: '0.85rem', marginBottom: '1rem' }}>
+                  {verificationActionError}
+                </div>
+              )}
+              {verificationActionSuccess && (
+                <div style={{ padding: '0.75rem', borderRadius: '6px', background: 'rgba(16, 185, 129, 0.2)', border: '1px solid #10b981', color: '#6ee7b7', fontSize: '0.85rem', marginBottom: '1rem' }}>
+                  {verificationActionSuccess}
+                </div>
+              )}
+
+              {/* Staff Resolution Notes & Attached Evidence */}
+              <div style={{ background: 'rgba(0, 0, 0, 0.35)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.08)', marginBottom: '1rem' }}>
+                <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: 700, color: '#94a3b8', letterSpacing: '0.05em', marginBottom: '0.4rem' }}>
+                  Municipal Staff Remediation Claim
+                </div>
+                <div style={{ fontSize: '0.92rem', color: '#e2e8f0', lineHeight: 1.5 }}>
+                  "{verification?.resolution_note || civicCase?.resolution_notes || 'Remediation completed by field team.'}"
+                </div>
+
+                {/* Evidence Photo if attached */}
+                {(verificationEvidence?.media_url || civicCase?.latest_evidence?.media_url) && (
+                  <div style={{ marginTop: '0.75rem' }}>
+                    <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.35rem' }}>
+                      Staff Resolution Evidence Photo:
+                    </div>
+                    <img
+                      src={verificationEvidence?.media_url || civicCase?.latest_evidence?.media_url}
+                      alt="Staff Resolution Evidence"
+                      style={{
+                        maxHeight: '220px',
+                        borderRadius: '6px',
+                        border: '1px solid rgba(255, 255, 255, 0.15)',
+                        objectFit: 'cover',
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Citizen Dispute Record (if DISPUTED) */}
+              {verification?.status === 'DISPUTED' && (
+                <div style={{ background: 'rgba(239, 68, 68, 0.15)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(239, 68, 68, 0.3)', marginBottom: '1rem' }}>
+                  <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: 700, color: '#fca5a5', letterSpacing: '0.05em', marginBottom: '0.35rem' }}>
+                    Citizen Dispute Reason
+                  </div>
+                  <div style={{ fontSize: '0.92rem', color: '#fee2e2', fontStyle: 'italic', lineHeight: 1.5 }}>
+                    "{verification.dispute_reason}"
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: '#f87171', marginTop: '0.5rem' }}>
+                    Awaiting municipal staff review and work resumption.
+                  </div>
+                </div>
+              )}
+
+              {/* Citizen Confirmation Record (if VERIFIED) */}
+              {verification?.status === 'VERIFIED' && (
+                <div style={{ background: 'rgba(16, 185, 129, 0.15)', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid rgba(16, 185, 129, 0.3)', marginBottom: '0.5rem' }}>
+                  <div style={{ fontSize: '0.85rem', color: '#6ee7b7', fontWeight: 600 }}>
+                    ✓ The reporting citizen confirmed the problem is fully resolved. Case is closed with full verification accountability.
+                  </div>
+                </div>
+              )}
+
+              {/* Verification Interactive Choice for Citizen Owner */}
+              {verification?.status === 'PENDING' && (
+                <div>
+                  <div style={{ fontSize: '0.85rem', color: '#fcd34d', marginBottom: '0.85rem', lineHeight: 1.5 }}>
+                    <strong>Citizen Verification Notice:</strong> Municipal staff have reported this issue as resolved. Please inspect the location and confirm whether the physical issue has been satisfactorily fixed.
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                    <button
+                      id="btn-confirm-verification"
+                      onClick={handleConfirmVerification}
+                      disabled={confirmingVerification}
+                      className="btn"
+                      style={{
+                        background: '#059669',
+                        color: '#fff',
+                        fontWeight: 600,
+                        fontSize: '0.88rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.4rem',
+                      }}
+                    >
+                      <Check size={16} />
+                      {confirmingVerification ? 'Confirming...' : 'Confirm Resolved'}
+                    </button>
+
+                    <button
+                      id="btn-dispute-verification"
+                      onClick={() => setShowDisputeModal(true)}
+                      disabled={confirmingVerification}
+                      className="btn"
+                      style={{
+                        background: '#dc2626',
+                        color: '#fff',
+                        fontWeight: 600,
+                        fontSize: '0.88rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.4rem',
+                      }}
+                    >
+                      <AlertTriangle size={16} />
+                      Issue Still Exists (Dispute)
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Citizen-Safe Operational Activity Timeline */}
           {caseTimeline.length > 0 && (
@@ -1602,6 +1973,75 @@ export const ReportDetail = () => {
           </div>
         </div>
       </div>
+
+      {/* Phase 8: Citizen Dispute Modal */}
+      {showDisputeModal && (
+        <div className="modal-overlay" style={{ zIndex: 1000 }}>
+          <div className="modal-card" style={{ maxWidth: '520px', width: '90%' }}>
+            <div className="modal-header">
+              <h3 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#ef4444' }}>
+                <AlertTriangle size={20} /> Dispute Municipal Resolution
+              </h3>
+              <button onClick={() => setShowDisputeModal(false)} className="modal-close-btn">
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleDisputeSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.5 }}>
+                Please explain why the civic issue is not resolved. Your feedback will be recorded in the public accountability audit log and dispatched to the municipal team.
+              </p>
+
+              <div>
+                <label className="form-label" style={{ fontWeight: 600, color: 'var(--text-main)' }}>
+                  Reason for Dispute (Mandatory, min 10 chars)
+                </label>
+                <textarea
+                  id="input-dispute-reason"
+                  value={disputeReason}
+                  onChange={(e) => setDisputeReason(e.target.value)}
+                  placeholder="e.g., Pothole is still present, only dirt was poured without asphalt sealant..."
+                  rows={4}
+                  required
+                  className="form-input"
+                  style={{ width: '100%' }}
+                />
+                <div style={{ fontSize: '0.75rem', color: disputeReason.trim().length >= 10 ? '#10b981' : '#94a3b8', marginTop: '0.35rem' }}>
+                  {disputeReason.trim().length}/10 characters minimum
+                </div>
+              </div>
+
+              {verificationActionError && (
+                <div style={{ padding: '0.65rem 0.85rem', borderRadius: '6px', background: 'rgba(239, 68, 68, 0.2)', border: '1px solid #ef4444', color: '#fca5a5', fontSize: '0.82rem' }}>
+                  {verificationActionError}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowDisputeModal(false);
+                    setVerificationActionError('');
+                  }}
+                  className="btn btn-outline"
+                >
+                  Cancel
+                </button>
+                <button
+                  id="btn-submit-dispute"
+                  type="submit"
+                  disabled={disputeSubmitting || disputeReason.trim().length < 10}
+                  className="btn"
+                  style={{ background: '#dc2626', color: '#fff' }}
+                >
+                  {disputeSubmitting ? 'Submitting Dispute...' : 'Submit Dispute'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -961,13 +961,88 @@ router.get('/:id/case', requireAuth, async (req, res) => {
         resolved_at: caseItem.resolved_at,
         resolution_notes: caseItem.resolution_notes,
         created_at: caseItem.created_at,
+        current_verification: caseItem.current_verification || null,
+        verification: caseItem.current_verification || null,
+        latest_evidence: caseItem.latest_evidence || null,
+        evidence: caseItem.latest_evidence || null,
       },
       timeline,
+      verification: caseItem.current_verification || null,
+      evidence: caseItem.latest_evidence || null,
     });
   } catch (err) {
     res.status(err.status || 500).json({
       error: err.status === 403 ? 'Forbidden' : 'Internal Server Error',
       message: err.message,
+    });
+  }
+});
+
+// =========================================================================
+// PHASE 8: RESOLUTION VERIFICATION & CITIZEN DISPUTE ENDPOINTS
+// =========================================================================
+
+/**
+ * POST /api/reports/:id/verification/confirm
+ * Authenticated citizen confirms physical resolution -> VERIFIED
+ */
+router.post('/:id/verification/confirm', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const caseService = require('../services/caseService');
+    const result = await caseService.confirmResolution(id, req.user);
+
+    res.status(200).json({
+      message: 'Resolution confirmed and verified successfully.',
+      case: result.case,
+      verification: result.verification,
+    });
+  } catch (err) {
+    res.status(err.status || 500).json({
+      error: err.status === 400 ? 'Bad Request' : err.status === 401 ? 'Unauthorized' : err.status === 403 ? 'Forbidden' : err.status === 404 ? 'Not Found' : 'Internal Server Error',
+      message: err.message || 'Failed to verify resolution.',
+    });
+  }
+});
+
+/**
+ * POST /api/reports/:id/verification/dispute
+ * Authenticated citizen disputes resolution -> DISPUTED
+ */
+router.post('/:id/verification/dispute', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const caseService = require('../services/caseService');
+    const result = await caseService.disputeResolution(id, req.body, req.user);
+
+    res.status(200).json({
+      message: 'Resolution dispute recorded successfully.',
+      case: result.case,
+      verification: result.verification,
+    });
+  } catch (err) {
+    res.status(err.status || 500).json({
+      error: err.status === 400 ? 'Bad Request' : err.status === 401 ? 'Unauthorized' : err.status === 403 ? 'Forbidden' : err.status === 404 ? 'Not Found' : 'Internal Server Error',
+      message: err.message || 'Failed to submit resolution dispute.',
+    });
+  }
+});
+
+/**
+ * GET /api/reports/:id/verification
+ * Retrieves resolution verification details, history, and evidence
+ */
+router.get('/:id/verification', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const caseService = require('../services/caseService');
+    const verificationData = await caseService.getCaseVerification(id, req.user);
+
+    res.status(200).json(verificationData);
+  } catch (err) {
+    res.status(err.status || 500).json({
+      error: err.status === 403 ? 'Forbidden' : err.status === 404 ? 'Not Found' : 'Internal Server Error',
+      message: err.message || 'Failed to fetch verification details.',
     });
   }
 });

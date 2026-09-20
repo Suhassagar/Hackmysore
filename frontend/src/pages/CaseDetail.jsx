@@ -22,6 +22,10 @@ import {
   History,
   X,
   ShieldAlert,
+  ShieldCheck,
+  AlertTriangle,
+  RotateCcw,
+  Camera,
 } from 'lucide-react';
 
 export const CaseDetail = () => {
@@ -49,7 +53,16 @@ export const CaseDetail = () => {
 
   const [showResolveModal, setShowResolveModal] = useState(false);
   const [resolveNote, setResolveNote] = useState('');
+  const [resolvePhoto, setResolvePhoto] = useState(null);
   const [submittingStatus, setSubmittingStatus] = useState(false);
+
+  // Phase 8: Verification & Reopen State
+  const [verification, setVerification] = useState(null);
+  const [verificationHistory, setVerificationHistory] = useState([]);
+  const [evidenceList, setEvidenceList] = useState([]);
+  const [showReopenModal, setShowReopenModal] = useState(false);
+  const [reopenNote, setReopenNote] = useState('');
+  const [reopening, setReopening] = useState(false);
 
   // Operational note state
   const [noteContent, setNoteContent] = useState('');
@@ -64,6 +77,17 @@ export const CaseDetail = () => {
       if (res.ok && res.data) {
         setCaseItem(res.data.case);
         setTimeline(res.data.timeline || []);
+        if (res.data.verification) {
+          setVerification(res.data.verification);
+        } else if (res.data.case?.current_verification) {
+          setVerification(res.data.case.current_verification);
+        }
+        if (res.data.verification_history) {
+          setVerificationHistory(res.data.verification_history);
+        }
+        if (res.data.evidence) {
+          setEvidenceList(res.data.evidence);
+        }
       } else {
         setError(res.data?.message || 'Failed to fetch case details');
       }
@@ -155,6 +179,63 @@ export const CaseDetail = () => {
       setActionError(err.message || 'Error updating case status.');
     } finally {
       setSubmittingStatus(false);
+    }
+  };
+
+  const handleResolveSubmit = async (e) => {
+    e.preventDefault();
+    if (!resolveNote.trim()) return;
+    setSubmittingStatus(true);
+    setActionError(null);
+    setActionSuccess(null);
+
+    try {
+      const payload = {
+        note: resolveNote.trim(),
+      };
+      if (resolvePhoto) {
+        payload.photoData = resolvePhoto;
+      }
+      const res = await api.resolveCaseWithEvidence(id, payload, token);
+
+      if (res.ok) {
+        setActionSuccess('Case marked as RESOLVED with resolution evidence.');
+        setShowResolveModal(false);
+        setResolveNote('');
+        setResolvePhoto(null);
+        fetchCase();
+      } else {
+        setActionError(res.data?.message || 'Failed to resolve case.');
+      }
+    } catch (err) {
+      setActionError(err.message || 'Error resolving case.');
+    } finally {
+      setSubmittingStatus(false);
+    }
+  };
+
+  const handleReopenSubmit = async (e) => {
+    e.preventDefault();
+    if (!reopenNote.trim()) return;
+    setReopening(true);
+    setActionError(null);
+    setActionSuccess(null);
+
+    try {
+      const res = await api.reopenCase(id, { note: reopenNote.trim() }, token);
+
+      if (res.ok) {
+        setActionSuccess('Disputed case successfully reopened back to IN_PROGRESS under original case number.');
+        setShowReopenModal(false);
+        setReopenNote('');
+        fetchCase();
+      } else {
+        setActionError(res.data?.message || 'Failed to reopen case.');
+      }
+    } catch (err) {
+      setActionError(err.message || 'Error reopening case.');
+    } finally {
+      setReopening(false);
     }
   };
 
@@ -453,13 +534,128 @@ export const CaseDetail = () => {
             )}
 
             {caseItem.status === 'RESOLVED' && (
-              <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#6ee7b7', background: 'rgba(16, 185, 129, 0.15)', padding: '0.45rem 0.9rem', borderRadius: 'var(--radius-md)', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
-                ✓ Work complete by staff. Awaiting independent verification in Phase 8.
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                <span
+                  style={{
+                    fontSize: '0.78rem',
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    padding: '0.35rem 0.75rem',
+                    borderRadius: '9999px',
+                    background:
+                      verification?.status === 'VERIFIED'
+                        ? 'rgba(16, 185, 129, 0.25)'
+                        : verification?.status === 'DISPUTED'
+                        ? 'rgba(239, 68, 68, 0.25)'
+                        : 'rgba(245, 158, 11, 0.25)',
+                    color:
+                      verification?.status === 'VERIFIED'
+                        ? '#6ee7b7'
+                        : verification?.status === 'DISPUTED'
+                        ? '#fca5a5'
+                        : '#fcd34d',
+                    border: `1px solid ${
+                      verification?.status === 'VERIFIED'
+                        ? '#10b981'
+                        : verification?.status === 'DISPUTED'
+                        ? '#ef4444'
+                        : '#f59e0b'
+                    }`,
+                  }}
+                >
+                  {verification?.status === 'VERIFIED'
+                    ? '✓ VERIFIED BY CITIZEN'
+                    : verification?.status === 'DISPUTED'
+                    ? '⚠ DISPUTED BY CITIZEN'
+                    : '● PENDING CITIZEN VERIFICATION'}
+                </span>
+
+                {verification?.status === 'DISPUTED' && (
+                  <button
+                    id="btn-reopen-case"
+                    onClick={() => setShowReopenModal(true)}
+                    className="btn"
+                    style={{ background: '#d97706', color: '#fff', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                  >
+                    <RotateCcw size={15} /> Reopen Case (Work Resumption)
+                  </button>
+                )}
               </div>
             )}
           </div>
         </div>
       </div>
+
+      {/* Phase 8: Verification Banner */}
+      {verification && (
+        <div
+          id="case-verification-status-card"
+          className="card"
+          style={{
+            marginBottom: '1.5rem',
+            padding: '1.25rem',
+            borderRadius: 'var(--radius-md)',
+            border:
+              verification.status === 'VERIFIED'
+                ? '1px solid rgba(16, 185, 129, 0.5)'
+                : verification.status === 'DISPUTED'
+                ? '1px solid rgba(239, 68, 68, 0.5)'
+                : '1px solid rgba(245, 158, 11, 0.5)',
+            background:
+              verification.status === 'VERIFIED'
+                ? 'linear-gradient(180deg, rgba(6, 78, 59, 0.35) 0%, rgba(2, 44, 34, 0.55) 100%)'
+                : verification.status === 'DISPUTED'
+                ? 'linear-gradient(180deg, rgba(127, 29, 29, 0.35) 0%, rgba(69, 10, 10, 0.55) 100%)'
+                : 'linear-gradient(180deg, rgba(120, 53, 15, 0.3) 0%, rgba(69, 26, 3, 0.5) 100%)',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
+            <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-start' }}>
+              {verification.status === 'VERIFIED' ? (
+                <ShieldCheck size={24} color="#10b981" />
+              ) : verification.status === 'DISPUTED' ? (
+                <AlertTriangle size={24} color="#ef4444" />
+              ) : (
+                <Clock size={24} color="#f59e0b" />
+              )}
+              <div>
+                <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#f8fafc' }}>
+                  {verification.status === 'VERIFIED'
+                    ? 'Resolution Verified by Citizen'
+                    : verification.status === 'DISPUTED'
+                    ? 'Citizen Disputed Resolution — Remediation Incomplete'
+                    : 'Awaiting Citizen Verification'}
+                </h4>
+                <div style={{ fontSize: '0.8rem', color: '#cbd5e1', marginTop: '0.2rem' }}>
+                  Verification Cycle #{verification.cycle_number || 1} • Status: <strong>{verification.status}</strong>
+                </div>
+
+                {verification.status === 'DISPUTED' && verification.dispute_reason && (
+                  <div style={{ marginTop: '0.75rem', background: 'rgba(0, 0, 0, 0.3)', padding: '0.75rem 1rem', borderRadius: '6px', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+                    <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: '#fca5a5', fontWeight: 700 }}>
+                      Citizen's Statement of Problem Persistence:
+                    </div>
+                    <div style={{ color: '#fee2e2', fontSize: '0.88rem', fontStyle: 'italic', marginTop: '0.25rem' }}>
+                      "{verification.dispute_reason}"
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {verification.status === 'DISPUTED' && (
+              <button
+                id="btn-reopen-case-banner"
+                onClick={() => setShowReopenModal(true)}
+                className="btn"
+                style={{ background: '#d97706', color: '#fff', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+              >
+                <RotateCcw size={15} /> Reopen Case For Work Resumption
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Main 2-Column Content */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '1.75rem', alignItems: 'start' }}>
@@ -582,17 +778,54 @@ export const CaseDetail = () => {
               </div>
             )}
 
-            {/* Resolution note box */}
-            {caseItem.resolution_notes && (
-              <div style={{ marginTop: '1rem', padding: '0.85rem', background: 'rgba(16, 185, 129, 0.15)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: 'var(--radius-md)' }}>
-                <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#6ee7b7', textTransform: 'uppercase' }}>
-                  Resolution Note (Staff Claim)
+            {/* Phase 8: Resolution Evidence & Verification section */}
+            {(caseItem.resolution_notes || evidenceList.length > 0 || verification) && (
+              <div style={{ marginTop: '1rem', padding: '1rem', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.25)', borderRadius: 'var(--radius-md)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#6ee7b7', textTransform: 'uppercase' }}>
+                    Staff Resolution Evidence & Verification
+                  </div>
+                  <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
+                    Standard: RESOLVED ≠ VERIFIED
+                  </span>
                 </div>
-                <p style={{ fontSize: '0.85rem', color: '#d1fae5', marginTop: '0.25rem' }}>
-                  "{caseItem.resolution_notes}"
-                </p>
-                <div style={{ fontSize: '0.72rem', color: '#a7f3d0', marginTop: '0.25rem', fontStyle: 'italic' }}>
-                  RESOLVED ≠ VERIFIED. Verification occurs in subsequent phase.
+
+                {caseItem.resolution_notes && (
+                  <p style={{ fontSize: '0.85rem', color: '#d1fae5', margin: '0.25rem 0 0.5rem' }}>
+                    "{caseItem.resolution_notes}"
+                  </p>
+                )}
+
+                {/* Attached Resolution Photos */}
+                {evidenceList.length > 0 && (
+                  <div style={{ marginTop: '0.6rem' }}>
+                    <div style={{ fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700, marginBottom: '0.35rem' }}>
+                      Attached Remediation Evidence:
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      {evidenceList.map((ev, idx) => (
+                        <div key={ev.id || idx} style={{ borderRadius: '4px', overflow: 'hidden', border: '1px solid rgba(255, 255, 255, 0.15)' }}>
+                          <img
+                            src={ev.media_url}
+                            alt="Resolution Evidence"
+                            style={{ height: '70px', width: '100px', objectFit: 'cover' }}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Verification State */}
+                <div style={{ marginTop: '0.6rem', fontSize: '0.75rem', color: '#a7f3d0' }}>
+                  Current Status:{' '}
+                  <strong>
+                    {verification?.status === 'VERIFIED'
+                      ? 'Confirmed Fixed (VERIFIED)'
+                      : verification?.status === 'DISPUTED'
+                      ? 'Disputed by Citizen (DISPUTED)'
+                      : 'Pending Citizen Inspection (PENDING)'}
+                  </strong>
                 </div>
               </div>
             )}
@@ -849,21 +1082,14 @@ export const CaseDetail = () => {
               </button>
             </div>
 
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                handleStatusTransition('RESOLVED', {
-                  note: resolveNote.trim(),
-                });
-              }}
-              style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}
-            >
+            <form onSubmit={handleResolveSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
               <div>
                 <label className="form-label">Mandatory Resolution Note</label>
                 <textarea
+                  id="input-resolution-note"
                   value={resolveNote}
                   onChange={(e) => setResolveNote(e.target.value)}
-                  placeholder="Describe the physical remediation performed (e.g. Pothole filled and road surface restored)..."
+                  placeholder="Describe the physical remediation performed (e.g. Pothole filled with bitumen and road surface restored)..."
                   rows={3}
                   required
                   className="form-input"
@@ -871,16 +1097,104 @@ export const CaseDetail = () => {
                 />
               </div>
 
+              <div>
+                <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <Camera size={15} /> Remediation Photo Evidence (Optional)
+                </label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      const reader = new FileReader();
+                      reader.onload = () => setResolvePhoto(reader.result);
+                      reader.readAsDataURL(file);
+                    }
+                  }}
+                  className="form-input"
+                  style={{ width: '100%', padding: '0.4rem' }}
+                />
+                {resolvePhoto && (
+                  <div style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <img
+                      src={resolvePhoto}
+                      alt="Resolution Preview"
+                      style={{ height: '60px', borderRadius: '4px', border: '1px solid var(--border-subtle)' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setResolvePhoto(null)}
+                      className="btn btn-outline btn-sm"
+                      style={{ fontSize: '0.72rem', padding: '0.2rem 0.5rem' }}
+                    >
+                      Remove Photo
+                    </button>
+                  </div>
+                )}
+              </div>
+
               <div style={{ fontSize: '0.78rem', color: '#a7f3d0', background: 'rgba(16, 185, 129, 0.1)', padding: '0.65rem 0.85rem', borderRadius: 'var(--radius-md)', border: '1px solid rgba(16, 185, 129, 0.25)' }}>
-                <strong>Important Distinction:</strong> RESOLVED means staff claims the work is complete. It does NOT mean the fix has been independently verified. Independent verification occurs in Phase 8.
+                <strong>Important Distinction:</strong> RESOLVED means staff claims the work is complete. It does NOT mean the fix has been independently verified. Independent verification is conducted by the affected citizen.
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem' }}>
                 <button type="button" onClick={() => setShowResolveModal(false)} className="btn btn-outline">
                   Cancel
                 </button>
-                <button type="submit" disabled={submittingStatus || !resolveNote.trim()} className="btn" style={{ background: '#059669', color: '#fff' }}>
+                <button id="btn-confirm-resolve" type="submit" disabled={submittingStatus || !resolveNote.trim()} className="btn" style={{ background: '#059669', color: '#fff' }}>
                   {submittingStatus ? 'Resolving...' : 'Confirm Resolution'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 4: Reopen Disputed Case */}
+      {showReopenModal && (
+        <div className="modal-overlay">
+          <div className="modal-card">
+            <div className="modal-header">
+              <h3 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#d97706' }}>
+                <RotateCcw size={20} /> Reopen Disputed Case
+              </h3>
+              <button onClick={() => setShowReopenModal(false)} className="modal-close-btn">
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleReopenSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.5 }}>
+                Following the citizen's dispute, reopening this case returns it to <strong>IN_PROGRESS</strong> status under its original case number #{caseItem.case_number}. Full audit and dispute history are retained.
+              </p>
+
+              <div>
+                <label className="form-label">Operational Reopening Note (Mandatory)</label>
+                <textarea
+                  id="input-reopen-note"
+                  value={reopenNote}
+                  onChange={(e) => setReopenNote(e.target.value)}
+                  placeholder="Explain operational plan for resumption (e.g. Field inspection verified asphalt patch required)..."
+                  rows={3}
+                  required
+                  className="form-input"
+                  style={{ width: '100%' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem' }}>
+                <button type="button" onClick={() => setShowReopenModal(false)} className="btn btn-outline">
+                  Cancel
+                </button>
+                <button
+                  id="btn-submit-reopen"
+                  type="submit"
+                  disabled={reopening || !reopenNote.trim()}
+                  className="btn"
+                  style={{ background: '#d97706', color: '#fff' }}
+                >
+                  {reopening ? 'Reopening Case...' : 'Confirm Reopen'}
                 </button>
               </div>
             </form>

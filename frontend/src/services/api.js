@@ -178,13 +178,14 @@ export const api = {
       token,
     }),
 
-  getStaffCases: (token, { page = 1, limit = 20, view = 'active', status, authorityId, departmentId, assignedTo, search } = {}) => {
+  getStaffCases: (token, { page = 1, limit = 20, view = 'active', status, authorityId, departmentId, assignedTo, search, verificationStatus } = {}) => {
     const params = new URLSearchParams({ page, limit, view });
     if (status) params.append('status', status);
     if (authorityId) params.append('authorityId', authorityId);
     if (departmentId) params.append('departmentId', departmentId);
     if (assignedTo) params.append('assignedTo', assignedTo);
     if (search) params.append('search', search);
+    if (verificationStatus) params.append('verification_status', verificationStatus);
     return apiRequest(`/staff/cases?${params.toString()}`, {
       method: 'GET',
       token,
@@ -221,6 +222,40 @@ export const api = {
   getStaffUsers: (token) =>
     apiRequest('/staff/users', {
       method: 'GET',
+      token,
+    }),
+
+  // Phase 8 Resolution Verification
+  getReportVerification: (reportId, token) =>
+    apiRequest(`/reports/${reportId}/verification`, {
+      method: 'GET',
+      token,
+    }),
+
+  confirmVerification: (reportId, token) =>
+    apiRequest(`/reports/${reportId}/verification/confirm`, {
+      method: 'POST',
+      token,
+    }),
+
+  disputeVerification: (reportId, disputeReason, token) =>
+    apiRequest(`/reports/${reportId}/verification/dispute`, {
+      method: 'POST',
+      body: JSON.stringify({ disputeReason, reason: disputeReason, dispute_reason: disputeReason }),
+      token,
+    }),
+
+  resolveCaseWithEvidence: (id, payload, token) =>
+    apiRequest(`/staff/cases/${id}/resolve`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      token,
+    }),
+
+  reopenCase: (id, payload, token) =>
+    apiRequest(`/staff/cases/${id}/reopen`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
       token,
     }),
 };
